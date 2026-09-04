@@ -19,6 +19,9 @@
   .sub{color:var(--muted);font-size:12.5px;margin-top:5px}
   .wrap{display:grid;grid-template-columns:340px 1fr;gap:22px;padding:22px 26px;
         align-items:start}
+  /* Grid items default to min-width:auto, so oversized content widens the
+     track instead of being constrained by it. */
+  .wrap>*{min-width:0}
   @media(max-width:900px){.wrap{grid-template-columns:1fr}}
   .card{background:var(--panel);border:1px solid var(--line);border-radius:8px;
         padding:16px}
@@ -63,7 +66,12 @@
   .verdict.pass{background:#0d2818;border:1px solid #1f6f36;color:var(--ok)}
   .verdict.fail{background:#2d0f0d;border:1px solid #6f1f1f;color:var(--bad)}
   .hint{color:var(--muted);font-size:12px;margin-top:9px}
-  .crop{border:1px solid var(--line);border-radius:6px;margin-top:11px;display:none}
+  /* Without max-width an image renders at its natural size and bursts out of
+     the 340px column, over the log. The crop is as large as the source face,
+     so it can be far wider than the sidebar. max-height keeps a tall portrait
+     from pushing the controls off-screen. */
+  .crop{border:1px solid var(--line);border-radius:6px;margin-top:11px;display:none;
+        max-width:100%;max-height:300px;height:auto;width:auto;object-fit:contain}
   code{font-family:var(--mono);font-size:12px;color:var(--warn)}
 </style>
 </head>
