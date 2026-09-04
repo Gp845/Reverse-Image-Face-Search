@@ -54,7 +54,7 @@ mkdir -p models && curl -L -o models/sface.onnx \
 | Backend | Env var | Free tier | Notes |
 |---|---|---|---|
 | SerpApi (Google Lens) | `SERPAPI_KEY` | 250 searches/mo | email signup, no card. Needs a public image URL, so the probe is uploaded to `0x0.st` first |
-| Google Vision web detection | `GOOGLE_VISION_API_KEY` | 1,000 units/mo | needs GCP billing enabled; takes raw bytes, no upload step |
+| Google Vision web detection | `GOOGLE_VISION_API_KEY` | 1,000 units/mo | **billing must be enabled on the project** even within the free tier, or every call returns `403 BILLING_DISABLED`; takes raw bytes, no upload step |
 
 Either one alone is enough; the pipeline reports which are active and skips the rest.
 
@@ -112,9 +112,24 @@ after anchoring fails the check.
   the *image*; the face comparison is what confirms identity afterwards.
   A photo that has never been published will not be found even if the person
   has other photos online.
-- **SerpApi uploads the probe to a third-party host** (`0x0.st`) to obtain the
-  public URL it requires. Only run it on images you have the right to share.
-  The Vision backend has no such step.
+- **SerpApi uploads the probe to a third-party host** to obtain the public URL
+  it requires. Only run it on images you have the right to share. The Vision
+  backend has no such step. The uploader falls through `catbox.moe` →
+  `uguu.se` → `x0.at` and checks that the returned URL actually serves image
+  bytes, because a host that answers with an HTML viewer page looks like a
+  success and then silently yields zero Lens results. The original single host
+  (`0x0.st`) has since disabled uploads outright, which is why this is a chain
+  rather than a constant.
+- **Google Lens gives no direct page URLs.** Every result links through a
+  `google.com/goto` interstitial whose payload is opaque (decoding it yields no
+  printable text). `resolve_page_url` recovers the real address from the
+  destination's `og:url`/`canonical`. In practice **~55% resolve**; the rest are
+  sites that answer the proxied fetch with 403/406 or omit both tags. An
+  unresolved candidate can still match on the face, so the record carries
+  `url_resolved: false` rather than presenting a redirector as the post.
+- **Google Vision web detection requires billing enabled** on the GCP project,
+  even inside the 1,000 free units/month. Without it the API returns
+  `403 PERMISSION_DENIED / BILLING_DISABLED` and the backend self-disables.
 - **Face enhancement is deliberately excluded from the judged path.** GFPGAN
   reconstructs plausible detail rather than recovering true detail, so putting
   it upstream of either the search or the embedding comparison would undermine

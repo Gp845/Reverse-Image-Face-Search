@@ -122,6 +122,9 @@ def main():
     print(f"    page   : {best.page_url}")
     print(f"    image  : {best.image_url}")
     print(f"    domain : {best.domain}   social={best.is_social}")
+    if not best.resolved:
+        print("    NOTE   : page URL is still a Google redirector -- the "
+              "destination blocked resolution.")
     print(f"    cosine : {score:.4f}")
     print(f"    found by: {', '.join(sorted(best.backends))}")
 
@@ -135,6 +138,7 @@ def main():
             "image_url": best.image_url,
             "domain": best.domain,
             "is_social": best.is_social,
+            "url_resolved": best.resolved,
             "cosine": round(float(score), 6),
             "found_by": sorted(best.backends),
             "corroborated": best.corroborated,
