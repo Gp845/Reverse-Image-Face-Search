@@ -16,9 +16,9 @@ not control. See the deployment note in the README.
 import io
 import json
 import os
-import queue
 import sys
 import threading
+import time
 import uuid
 from contextlib import redirect_stdout
 
@@ -36,7 +36,6 @@ load_dotenv()
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 UPLOADS = os.path.join(ROOT, "out", "uploads")
-SENTINEL = object()
 
 # A deployed instance is a face-identification endpoint that spends a funded key
 # and a metered search quota. ACCESS_TOKEN gates every route that costs
@@ -75,11 +74,16 @@ def _running_jobs():
 
 
 class LogSink(io.TextIOBase):
-    """Collects emitted lines and fans them out to any listening browser.
+    """Collects emitted lines into the job's log.
 
     Doubles as a stdout replacement: the search backends print progress
     directly (upload attempts, per-engine errors), and that detail is worth
     showing rather than swallowing.
+
+    The log list is the single source of truth; readers follow it by index.
+    An earlier version also pushed each line onto a queue that /api/log drained
+    after replaying the backlog, which showed every line written before the
+    browser connected twice.
     """
 
     def __init__(self, job):
@@ -89,7 +93,6 @@ class LogSink(io.TextIOBase):
         if text and text.strip():
             for line in text.rstrip("\n").split("\n"):
                 self.job["log"].append(line)
-                self.job["queue"].put(line)
         return len(text or "")
 
     def flush(self):
@@ -112,8 +115,6 @@ def _worker(job_id, image_path, opts):
         job["error"] = f"{type(exc).__name__}: {exc}"
         job["status"] = "error"
         sink.write(f"\nFAILED: {job['error']}")
-    finally:
-        job["queue"].put(SENTINEL)
 
 
 @app.route("/")
@@ -153,8 +154,8 @@ def api_run():
 
     with JOBS_LOCK:
         JOBS[job_id] = {"id": job_id, "status": "running", "log": [],
-                        "queue": queue.Queue(), "out": out_dir,
-                        "image": image_path, "result": None, "error": None}
+                        "out": out_dir, "image": image_path,
+                        "result": None, "error": None}
 
     threading.Thread(target=_worker, args=(job_id, image_path, opts),
                      daemon=True).start()
@@ -168,19 +169,20 @@ def api_log(job_id):
         return jsonify(error="unknown job"), 404
 
     def stream():
-        # Replay what already happened, so a late or reconnecting browser sees
-        # the whole run rather than joining midway.
-        for line in list(job["log"]):
-            yield f"data: {json.dumps(line)}\n\n"
-        if job["status"] != "running":
-            yield "event: end\ndata: {}\n\n"
-            return
+        # Follow the log by index. A late or reconnecting browser replays the
+        # backlog and then continues live, and several browsers can watch the
+        # same job, because each holds only its own cursor.
+        sent = 0
         while True:
-            line = job["queue"].get()
-            if line is SENTINEL:
+            log = job["log"]
+            if sent < len(log):
+                yield f"data: {json.dumps(log[sent])}\n\n"
+                sent += 1
+                continue
+            if job["status"] != "running":
                 yield "event: end\ndata: {}\n\n"
                 return
-            yield f"data: {json.dumps(line)}\n\n"
+            time.sleep(0.15)
 
     return Response(stream(), mimetype="text/event-stream",
                     headers={"Cache-Control": "no-cache",
