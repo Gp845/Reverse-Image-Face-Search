@@ -36,6 +36,11 @@ class PipelineError(Exception):
 def _candidate_dict(score, c):
     return {
         "page_url": c.page_url,
+        # Kept because it is the only description of the post that survives:
+        # Instagram and TikTok serve bots a page with the Open Graph tags
+        # removed, so the engine's own title and source line is all there is.
+        "title": (c.title or "")[:300],
+        "source": (c.source or "")[:200],
         "image_url": c.image_url,
         "domain": c.domain,
         "is_social": c.is_social,

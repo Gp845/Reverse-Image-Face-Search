@@ -123,6 +123,11 @@ class Candidate:
     image_url: str
     page_url: str = ""
     title: str = ""
+    # Human-readable origin as the engine reports it, e.g. "Instagram ·
+    # mentors_eduserv". Often names the account, which no amount of scraping
+    # would recover: Instagram and TikTok return 200 to a bot with the Open
+    # Graph tags stripped out.
+    source: str = ""
     backends: set = field(default_factory=set)
 
     @property
@@ -205,6 +210,7 @@ class SerpApiLens(SearchBackend):
                     if img or link:
                         out.append(Candidate(image_url=img or "", page_url=link,
                                              title=m.get("title", ""),
+                                             source=m.get("source", ""),
                                              backends={self.name}))
         out = out[:self.max_keep]
         # Every google_lens link is a redirector; unwrap them before the
@@ -256,6 +262,7 @@ class GoogleReverseImage(SearchBackend):
             if page:
                 out.append(Candidate(image_url=m.get("thumbnail", "") or "",
                                      page_url=page, title=m.get("title", ""),
+                                     source=m.get("source", ""),
                                      backends={self.name}))
         return out
 
@@ -488,6 +495,7 @@ def merge(groups):
             seen[key].image_url = seen[key].image_url or c.image_url
             seen[key].page_url = seen[key].page_url or c.page_url
             seen[key].title = seen[key].title or c.title
+            seen[key].source = seen[key].source or c.source
         else:
             seen[key] = c
     # Corroborated first, then social, then candidates whose real page URL we
