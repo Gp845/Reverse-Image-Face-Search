@@ -193,10 +193,10 @@ def run(image_path, *, backend="all", conf=0.9, threshold=COSINE_THRESHOLD,
         os.environ["PRIVATE_KEY"] = key
         emit("  NOTE: in-process chain. It dies with this process, so use a")
         emit("        persistent node or testnet for a real demonstration.")
-    emit("  waiting for the transaction to be mined (~20s on Sepolia)...")
-    anchored = chain.anchor(record, rpc_url=rpc)
+    anchored = chain.anchor(record, rpc_url=rpc, emit=emit)
     for k, v in anchored.items():
-        emit(f"  {k:13s} {v}")
+        if k not in ("tx_hash", "explorer", "block_number"):
+            emit(f"  {k:13s} {v}")
     anchored["rpc"] = rpc
     anchor_path = os.path.join(out, "anchor.json")
     with open(anchor_path, "w") as fh:

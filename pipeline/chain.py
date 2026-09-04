@@ -17,6 +17,7 @@ development, or a public testnet for a demo a judge can open in a block explorer
 import hashlib
 import json
 import os
+import time
 
 from web3 import Web3
 
@@ -107,8 +108,16 @@ def preflight(rpc_url=None, private_key=None):
     }
 
 
-def anchor(record, rpc_url=None, private_key=None):
-    """Write sha256(record) to chain. Returns a dict describing the anchor."""
+def anchor(record, rpc_url=None, private_key=None, emit=None):
+    """Write sha256(record) to chain. Returns a dict describing the anchor.
+
+    `emit` receives progress. The transaction hash is final the moment it is
+    broadcast, so it is reported immediately rather than after inclusion --
+    Sepolia produces a block every ~12s and where a broadcast lands in that
+    cycle swings the wait between about 1 and 13 seconds. Without this the run
+    simply goes quiet for an unpredictable stretch and looks stalled.
+    """
+    say = emit or (lambda _m: None)
     private_key = private_key or os.getenv("PRIVATE_KEY", "")
     if not private_key:
         raise ValueError("PRIVATE_KEY not set")
@@ -135,8 +144,36 @@ def anchor(record, rpc_url=None, private_key=None):
 
     signed = w3.eth.account.sign_transaction(tx, private_key)
     tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction)
-    receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=300)
     chain_id = w3.eth.chain_id
+    tx_hex = _0x(tx_hash)
+    say(f"  submitted     {tx_hex}")
+    if chain_id in EXPLORERS:
+        say(f"  explorer      {EXPLORERS[chain_id] + tx_hex}")
+
+    # Poll rather than wait_for_transaction_receipt so the wait can be narrated.
+    # Heartbeat on elapsed time since the last one, not on exact multiples: each
+    # iteration costs an RPC round trip plus the sleep, so a counter stepping
+    # ~2s at a time skips whichever multiple it happens to jump over.
+    started = time.time()
+    deadline = started + 300
+    next_beat = started + 5.0
+    receipt = None
+    while True:
+        try:
+            receipt = w3.eth.get_transaction_receipt(tx_hash)
+        except Exception:
+            receipt = None
+        if receipt is not None:
+            break
+        now = time.time()
+        if now > deadline:
+            raise TimeoutError(f"{tx_hex} not mined within 300s")
+        if now >= next_beat:
+            say(f"  ...still pending after {int(now - started)}s "
+                f"(a Sepolia block is ~12s)")
+            next_beat = now + 5.0
+        time.sleep(1)
+    say(f"  mined         block {receipt['blockNumber']}")
     tx_hash_hex = _0x(receipt["transactionHash"])
     anchored = {
         "tx_hash": tx_hash_hex,
