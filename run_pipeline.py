@@ -16,7 +16,7 @@ import sys
 from dotenv import load_dotenv
 
 from pipeline.core import PipelineError, run
-from pipeline.encode import DEFAULT_CONF, DEFAULT_THRESHOLD
+from pipeline.encode import DEFAULT_CONF, DEFAULT_THRESHOLD, MIN_FACE_PX
 
 
 def main():
@@ -36,6 +36,9 @@ def main():
                     help="how many distinct faces to identify, largest first. "
                          "Each face costs a full set of searches, so 5 faces is "
                          "5x the quota of 1")
+    ap.add_argument("--min-face", type=int, default=MIN_FACE_PX,
+                    help=f"smallest face to encode, in pixels (default {MIN_FACE_PX}). "
+                         "Set 0 to disable; embeddings degrade badly below ~48px")
     ap.add_argument("--social-only", action="store_true",
                     help="only check candidates on known social platforms")
     ap.add_argument("--rpc", default=os.getenv("RPC_URL", "memory"),
@@ -49,7 +52,7 @@ def main():
                      threshold=args.threshold, limit=args.limit,
                      social_only=args.social_only, rpc=args.rpc,
                      no_chain=args.no_chain, out=args.out, faces=args.faces,
-                     emit=print)
+                     min_face=args.min_face, emit=print)
     except PipelineError as exc:
         sys.exit(f"\n{exc}")
 

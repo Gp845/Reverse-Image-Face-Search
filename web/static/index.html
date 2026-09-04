@@ -145,7 +145,7 @@ re-encoded, then a Sepolia transaction.</span></div>
       <div class="kv" id="matchkv"></div>
 
       <h2 id="faceshead" style="margin-top:6px;display:none">Faces identified</h2>
-      <div class="gallery" id="faces"></div>
+      <div class="gallery" id="facegallery"></div>
 
       <h2 id="galleryhead" style="margin-top:6px;display:none">Top matches</h2>
       <div class="gallery" id="gallery"></div>
@@ -217,18 +217,18 @@ function line(text) {
   if (stick) log.scrollTop = log.scrollHeight;
 }
 
-// Load the face crop. Called when the log announces it and again when the run
-// ends, because tying an image to a regex over log text means any wording
-// change silently breaks the display -- and polls briefly, since the endpoint
-// 404s until the file lands.
-function showCrop(tries = 6) {
+// Poll for the face crop from the moment the run starts. It used to be
+// triggered by matching a line of log text, which broke silently the first
+// time that line was reworded -- the crop then only appeared at the very end,
+// via the fallback. Nothing here depends on the wording now: the endpoint 404s
+// until stage 1 writes the file, so retrying is the whole mechanism.
+function showCrop(tries = 30, delay = 1200) {
   if (!job) return;
   const img = $('crop');
   const url = withTok('/api/crop/' + job + '?t=' + Date.now());
   img.onload = () => { img.style.display = 'block'; };
   img.onerror = () => {
-    if (tries > 1) setTimeout(() => showCrop(tries - 1), 800);
-    else line('(face crop could not be loaded from ' + url + ')');
+    if (tries > 1) setTimeout(() => showCrop(tries - 1, delay), delay);
   };
   img.src = url;
 }
@@ -254,13 +254,13 @@ $('go').onclick = async () => {
   const data = await res.json();
   if (data.error) { line('ERROR: ' + data.error); $('go').disabled = false; return; }
   job = data.job_id;
+  showCrop();   // starts polling; stage 1 usually lands within a few seconds
 
   // EventSource cannot set headers, so the token rides in the query string.
   const es = new EventSource(withTok('/api/log/' + job));
   es.onmessage = e => {
     const text = JSON.parse(e.data);
     line(text);
-    if (/preview  :/.test(text)) showCrop();
   };
   es.addEventListener('end', async () => {
     es.close();
@@ -309,7 +309,7 @@ function showResult(r) {
 // best match, so a group photo reads as several independent identifications
 // rather than one number.
 function renderFaces(faceResults, record) {
-  const head = $('faceshead'), box = $('faces');
+  const head = $('faceshead'), box = $('facegallery');
   if (faceResults.length < 2) { head.style.display = 'none'; box.innerHTML = ''; return; }
   head.style.display = 'block';
   head.textContent = `Faces identified (${faceResults.filter(f => f.matches && f.matches.length).length} of ${faceResults.length})`;

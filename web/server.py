@@ -29,7 +29,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from pipeline import chain                                     # noqa: E402
 from pipeline.core import PipelineError, run                   # noqa: E402
-from pipeline.encode import DEFAULT_CONF, DEFAULT_THRESHOLD    # noqa: E402
+from pipeline.encode import (DEFAULT_CONF, DEFAULT_THRESHOLD,   # noqa: E402
+                             MIN_FACE_PX)
 
 load_dotenv()
 
@@ -151,6 +152,7 @@ def api_run():
         # a metered quota, and a deployed instance should not let one upload
         # spend it all.
         "faces": max(1, min(int(form.get("faces", 1)), 5)),
+        "min_face": max(0, int(form.get("min_face", MIN_FACE_PX))),
         "social_only": form.get("social_only") == "true",
         "no_chain": form.get("no_chain") == "true",
         "rpc": form.get("rpc") or os.getenv("RPC_URL", "memory"),
@@ -208,17 +210,19 @@ def api_crop(job_id, face=None):
     job = JOBS.get(job_id)
     if not job:
         return jsonify(error="unknown job"), 404
-    if face:
-        path = os.path.join(job["out"], f"probe_face{face}_preview.jpg")
+    # A multi-face run names its crops probe_faceN_preview.jpg and writes no
+    # plain probe_preview.jpg, so the unnumbered route has to fall back to the
+    # first face or it 404s for the whole run. Padded previews come before the
+    # 112x112 alignCrop, which is for the model rather than for eyes.
+    names = ([f"probe_face{face}_preview.jpg", f"probe_face{face}_aligned.jpg"]
+             if face else
+             ["probe_preview.jpg", "probe_face1_preview.jpg",
+              "probe_aligned.jpg", "probe_face1_aligned.jpg"])
+    for name in names:
+        path = os.path.join(job["out"], name)
         if os.path.exists(path):
             return send_file(path, mimetype="image/jpeg")
-    # Prefer the padded preview; the 112x112 alignCrop is for the model, not eyes.
-    path = os.path.join(job["out"], "probe_preview.jpg")
-    if not os.path.exists(path):
-        path = os.path.join(job["out"], "probe_aligned.jpg")
-    if not os.path.exists(path):
-        return jsonify(error="no crop yet"), 404
-    return send_file(path, mimetype="image/jpeg")
+    return jsonify(error="no crop yet"), 404
 
 
 @app.post("/api/verify")

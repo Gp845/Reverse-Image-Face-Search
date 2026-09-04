@@ -90,7 +90,7 @@ def _search(probe_path, active, emit):
 
 def run(image_path, *, backend="all", conf=DEFAULT_CONF, threshold=DEFAULT_THRESHOLD,
         limit=25, social_only=False, rpc=None, no_chain=False, out="out",
-        faces=1, emit=print):
+        faces=1, min_face=MIN_FACE_PX, emit=print):
     """Run the full pipeline. Returns a dict describing everything it did."""
     rpc = rpc or os.getenv("RPC_URL", "memory")
 
@@ -132,18 +132,26 @@ def run(image_path, *, backend="all", conf=DEFAULT_CONF, threshold=DEFAULT_THRES
     # left a single usable face.
     detected = [scale_row(r, factor) for r in enc.detect(small)]
     image = original
-    found = enc.encode_rows(image, detected, max_faces=faces)
+    found = enc.encode_rows(image, detected, max_faces=faces, min_size=min_face)
     if not found:
         raise PipelineError(
-            f"no usable face at conf>={conf} and >={MIN_FACE_PX}px. "
+            f"no usable face at conf>={conf} and >={min_face}px. "
             f"{len(detected)} raw detection(s); try a lower confidence floor.")
+
+    # How many distinct faces the image actually holds, regardless of --faces.
+    available = len(enc.encode_rows(image, detected, min_size=min_face))
 
     emit(f"  detector : YuNet   {len(detected)} detection(s), "
          f"{len(found)} distinct face(s) kept (largest first)")
     emit(f"  encoder  : SFace   {len(found[0][0])}-d embedding each")
     if len(detected) > len(found):
-        emit(f"  dropped  : {len(detected) - len(found)} below {MIN_FACE_PX}px "
-             "or duplicates of a face already kept")
+        emit(f"  dropped  : {len(detected) - len(found)} below {min_face}px, "
+             "duplicates, or beyond the requested face count")
+    if available > len(found):
+        emit(f"\n  NOTE: this image has {available} distinct faces but only "
+             f"{len(found)} was requested.")
+        emit(f"        Use --faces {min(available, 5)} to identify more "
+             "(each face costs its own set of searches).")
 
     face_infos = []
     for i, (emb, row) in enumerate(found):
