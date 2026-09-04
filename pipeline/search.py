@@ -211,6 +211,101 @@ class SerpApiLens(SearchBackend):
         return resolve_candidates(out)
 
 
+class GoogleReverseImage(SearchBackend):
+    """Google's classic reverse image search, via SerpApi's google_reverse_image.
+
+    Distinct from Google Lens despite the shared owner: it returns the pages
+    Google associates with the image, complete with real links -- no goto
+    interstitial to unwrap -- and it surfaces posts Lens misses entirely.
+
+    Results are page-oriented rather than image-oriented, so many carry no
+    thumbnail. That is fine: merge() unions this backend's page URLs with the
+    image URLs the image-oriented engines found for the same page, which is
+    exactly how a candidate ends up corroborated.
+    """
+    name = "greverse"
+    ENDPOINT = "https://serpapi.com/search"
+    MAX_KEEP = 40
+
+    def __init__(self, api_key=None, max_keep=None):
+        self.api_key = api_key or os.getenv("SERPAPI_KEY", "")
+        self.max_keep = max_keep or self.MAX_KEEP
+
+    def available(self):
+        return bool(self.api_key)
+
+    def search(self, image_path, public_url=None):
+        if not public_url:
+            raise ValueError("google_reverse_image needs a public image URL")
+        params = {"engine": "google_reverse_image", "image_url": public_url,
+                  "api_key": self.api_key}
+        try:
+            r = requests.get(self.ENDPOINT, params=params, timeout=90)
+            r.raise_for_status()
+            data = r.json()
+        except Exception as e:
+            print(f"    [greverse] request failed: {e}")
+            return []
+        if "error" in data:
+            print(f"    [greverse] {data['error']}")
+            return []
+        out = []
+        for m in (data.get("image_results") or [])[:self.max_keep]:
+            page = _strip_tracking(m.get("link", ""))
+            if page:
+                out.append(Candidate(image_url=m.get("thumbnail", "") or "",
+                                     page_url=page, title=m.get("title", ""),
+                                     backends={self.name}))
+        return out
+
+
+class BingReverseImage(SearchBackend):
+    """Bing visual search, via SerpApi's bing_reverse_image engine.
+
+    Microsoft retired the direct Bing Search APIs on 2025-08-11, so SerpApi is
+    now the practical way in. Bing returns visually-similar rather than exact
+    matches, which means lower precision than the other engines -- but that
+    costs nothing here, because every candidate still has to survive the face
+    match before it can be recorded.
+    """
+    name = "bing"
+    ENDPOINT = "https://serpapi.com/search"
+    MAX_KEEP = 40
+
+    def __init__(self, api_key=None, max_keep=None):
+        self.api_key = api_key or os.getenv("SERPAPI_KEY", "")
+        self.max_keep = max_keep or self.MAX_KEEP
+
+    def available(self):
+        return bool(self.api_key)
+
+    def search(self, image_path, public_url=None):
+        if not public_url:
+            raise ValueError("bing_reverse_image needs a public image URL")
+        params = {"engine": "bing_reverse_image", "image_url": public_url,
+                  "api_key": self.api_key}
+        try:
+            r = requests.get(self.ENDPOINT, params=params, timeout=90)
+            r.raise_for_status()
+            data = r.json()
+        except Exception as e:
+            print(f"    [bing] request failed: {e}")
+            return []
+        if "error" in data:
+            print(f"    [bing] {data['error']}")
+            return []
+        out = []
+        for m in (data.get("related_content") or [])[:self.max_keep]:
+            # `link` is a bing.com viewer URL; `source` is the actual page.
+            page = _strip_tracking(m.get("source", ""))
+            img = m.get("original") or m.get("cdn_original") or m.get("thumbnail") or ""
+            if page or img:
+                out.append(Candidate(image_url=img, page_url=page,
+                                     title=m.get("title", ""),
+                                     backends={self.name}))
+        return out
+
+
 class YandexImages(SearchBackend):
     """Yandex reverse image search, via SerpApi's yandex_images engine.
 
@@ -402,7 +497,8 @@ def merge(groups):
                                  not c.resolved))
 
 
-ALL_BACKENDS = (SerpApiLens, YandexImages, GoogleVisionWeb)
+ALL_BACKENDS = (SerpApiLens, GoogleReverseImage, YandexImages,
+                BingReverseImage, GoogleVisionWeb)
 
 
 def build_backends():

@@ -8,9 +8,9 @@ retrieved image, and writes the result to a blockchain as a tamper-evident recor
 probe image ──▶ YuNet detect ──▶ SFace encode (128-d)
                                       │
                                       ▼
-                     ┌────────── reverse image search ──────────┐
-                     │  Google Lens      Yandex     (Vision)    │
-                     └──────────────────┬───────────────────────┘
+         ┌──────────── reverse image search (parallel) ────────────┐
+         │  Google Lens   Google Reverse   Yandex   Bing  (Vision) │
+         └────────────────────────┬───────────────────────────────┘
                                         ▼
                             merge + dedupe candidates
                                         ▼
@@ -37,10 +37,16 @@ index consulted twice, and it is materially harder to fake than a single opaque
 call. Yandex is also distinctly better at faces, and unlike Lens it returns the
 real page URL and a full-resolution image rather than a thumbnail.
 
-Both currently reach the web through SerpApi, so the *vendor* is shared even
-though the indexes are not. Google Vision web detection is implemented as a
-third, fully independent backend and switches itself on the moment
-`GOOGLE_VISION_API_KEY` is set.
+Four engines run **in parallel**: Google Lens, Google's classic reverse image
+search, Yandex, and Bing. They disagree constantly, which is the point — on the
+authors' own test probe they returned 88 unique candidates of which only 5 were
+found by more than one engine, and the winning Instagram post was one of those 5.
+
+All four reach the web through SerpApi, so the *vendor* is shared even though
+the indexes are not. Google Vision web detection is implemented as a fifth,
+fully independent backend and switches itself on the moment
+`GOOGLE_VISION_API_KEY` is set. Microsoft's own Bing Search APIs were retired on
+2025-08-11, so SerpApi is now the practical route to that index.
 
 ## Setup
 
@@ -61,8 +67,13 @@ mkdir -p models && curl -L -o models/sface.onnx \
 
 | Backend | Env var | Free tier | Notes |
 |---|---|---|---|
-| SerpApi — Google Lens | `SERPAPI_KEY` | 250 searches/mo | email signup, no card. Needs a public image URL, so the probe is uploaded first |
-| SerpApi — Yandex images | `SERPAPI_KEY` | same quota | no extra signup; shares the key above. Direct page URLs, full-res images |
+| SerpApi — Google Lens | `SERPAPI_KEY` | 250 searches/mo | email signup, no card. Needs a public image URL, so the probe is uploaded first. Costs 2 searches (exact + visual) |
+| SerpApi — Google Reverse Image | `SERPAPI_KEY` | same quota | direct page links, no interstitial. Page-oriented, so often no thumbnail |
+| SerpApi — Yandex images | `SERPAPI_KEY` | same quota | direct page URLs, full-res images. Best of the four on faces |
+| SerpApi — Bing reverse image | `SERPAPI_KEY` | same quota | visually-similar rather than exact, so lower precision — the face match filters it |
+
+One full run spends **5 SerpApi searches**, so the free 250/month is about
+50 runs. `--backend <name>` restricts to a single engine while iterating.
 | Google Vision web detection | `GOOGLE_VISION_API_KEY` | 1,000 units/mo | **billing must be enabled on the project** even within the free tier, or every call returns `403 BILLING_DISABLED`; takes raw bytes, no upload step |
 
 Either one alone is enough; the pipeline reports which are active and skips the rest.

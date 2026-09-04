@@ -82,5 +82,10 @@ def verify_candidates(encoder, probe_embedding, candidates, threshold=COSINE_THR
                   f"{c.domain} {'(corroborated)' if c.corroborated else ''}")
         if ok:
             confirmed.append((score, c))
-    confirmed.sort(key=lambda t: t[0], reverse=True)
+    # Ties are real: the same image reached us as two candidates (say an
+    # Instagram post and an unresolved redirector pointing at it), so they score
+    # identically. Break toward the one that makes a better record rather than
+    # leaving it to upstream ordering and sort stability.
+    confirmed.sort(key=lambda t: (-t[0], not t[1].is_social, not t[1].resolved,
+                                  not t[1].corroborated))
     return confirmed

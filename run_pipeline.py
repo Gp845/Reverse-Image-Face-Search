@@ -13,6 +13,7 @@ import hashlib
 import json
 import os
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 
 import cv2
@@ -32,7 +33,8 @@ def main():
     load_dotenv()
     ap = argparse.ArgumentParser(description="Face ID + blockchain verification pipeline")
     ap.add_argument("image", help="probe image containing the face to identify")
-    ap.add_argument("--backend", choices=["all", "serpapi", "yandex", "vision"],
+    ap.add_argument("--backend",
+                    choices=["all", "serpapi", "greverse", "yandex", "bing", "vision"],
                     default="all")
     ap.add_argument("--conf", type=float, default=0.9, help="face detection confidence floor")
     ap.add_argument("--threshold", type=float, default=COSINE_THRESHOLD,
@@ -77,8 +79,8 @@ def main():
 
     # ---------------------------------------------------------------- stage 2
     rule("STAGE 2/4  reverse image search")
-    wanted = ({"serpapi", "yandex", "vision"} if args.backend == "all"
-              else {args.backend})
+    wanted = ({"serpapi", "greverse", "yandex", "bing", "vision"}
+              if args.backend == "all" else {args.backend})
     backends = [b for b in build_backends() if b.name in wanted]
     active = [b for b in backends if b.available()]
     for b in backends:
@@ -87,21 +89,28 @@ def main():
         sys.exit("\nno search backend configured. Set SERPAPI_KEY and/or "
                  "GOOGLE_VISION_API_KEY in .env (see .env.example).")
 
-    needs_url = {"serpapi", "yandex"}
+    needs_url = {"serpapi", "greverse", "yandex", "bing"}
     public_url = None
     if any(b.name in needs_url for b in active):
-        print("\n  uploading probe for a public URL (Lens and Yandex both need one)...")
+        print("\n  uploading probe for a public URL (every engine but Vision needs one)...")
         public_url = upload_for_public_url(args.image)
         print(f"  probe url: {public_url or 'FAILED - those backends will be skipped'}")
 
+    runnable = [b for b in active if not (b.name in needs_url and not public_url)]
+    print(f"\n  querying {len(runnable)} engine(s) in parallel...")
+
+    def _run(b):
+        try:
+            return b.name, b.search(args.image, public_url=public_url)
+        except Exception as exc:
+            print(f"    [{b.name}] {exc}")
+            return b.name, []
+
     raw = []
-    for b in active:
-        if b.name in needs_url and not public_url:
-            continue
-        print(f"\n  querying {b.name}...")
-        hits = b.search(args.image, public_url=public_url)
-        print(f"  {b.name}: {len(hits)} raw hits")
-        raw.extend(hits)
+    with ThreadPoolExecutor(max_workers=max(1, len(runnable))) as pool:
+        for name, hits in pool.map(_run, runnable):
+            print(f"  {name:9s} {len(hits)} raw hits")
+            raw.extend(hits)
 
     candidates = merge(raw)
     social = [c for c in candidates if c.is_social]
