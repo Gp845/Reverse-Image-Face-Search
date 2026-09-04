@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Face ID → Blockchain</title>
+<style>
+  :root{
+    --bg:#0d1117; --panel:#161b22; --line:#30363d; --text:#e6edf3;
+    --muted:#8b949e; --accent:#58a6ff; --ok:#3fb950; --bad:#f85149;
+    --warn:#d29922; --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);
+       font:14px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+  header{padding:22px 26px;border-bottom:1px solid var(--line)}
+  h1{margin:0;font-size:17px;letter-spacing:.2px}
+  h1 span{color:var(--muted);font-weight:400}
+  .sub{color:var(--muted);font-size:12.5px;margin-top:5px}
+  .wrap{display:grid;grid-template-columns:340px 1fr;gap:22px;padding:22px 26px;
+        align-items:start}
+  @media(max-width:900px){.wrap{grid-template-columns:1fr}}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:8px;
+        padding:16px}
+  .card h2{margin:0 0 12px;font-size:12px;text-transform:uppercase;
+           letter-spacing:.9px;color:var(--muted);font-weight:600}
+  label{display:block;font-size:12px;color:var(--muted);margin:11px 0 4px}
+  input[type=file],select,input[type=number]{width:100%;background:#0d1117;
+    color:var(--text);border:1px solid var(--line);border-radius:6px;padding:7px 9px;
+    font-size:13px;font-family:inherit}
+  .row{display:flex;gap:9px}.row>*{flex:1}
+  .chk{display:flex;align-items:center;gap:7px;margin-top:11px;font-size:12.5px;
+       color:var(--muted)}
+  .chk input{accent-color:var(--accent)}
+  button{width:100%;margin-top:15px;background:var(--accent);color:#04121f;border:0;
+         border-radius:6px;padding:9px;font-size:13.5px;font-weight:600;cursor:pointer}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  button.ghost{background:transparent;color:var(--accent);
+               border:1px solid var(--line);font-weight:500}
+  #log{background:#010409;border:1px solid var(--line);border-radius:8px;padding:14px;
+       font:12.5px/1.6 var(--mono);white-space:pre-wrap;word-break:break-word;
+       height:430px;overflow:auto;color:#c9d1d9}
+  #log .m{color:var(--ok)}#log .n{color:var(--muted)}#log .r{color:var(--bad)}
+  #log .h{color:var(--accent)}
+  .engines{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px}
+  .pill{font:11px var(--mono);padding:2.5px 8px;border-radius:999px;
+        border:1px solid var(--line);color:var(--muted)}
+  .pill.on{color:var(--ok);border-color:#1f6f36}
+  .result{margin-top:18px;display:none}
+  .kv{display:grid;grid-template-columns:120px 1fr;gap:7px 14px;font-size:13px;
+      margin-bottom:14px}
+  .kv div:nth-child(odd){color:var(--muted)}
+  .kv a{color:var(--accent);word-break:break-all}
+  .score{font:22px var(--mono);color:var(--ok)}
+  .tag{display:inline-block;font:11px var(--mono);padding:2px 7px;border-radius:4px;
+       border:1px solid var(--line);color:var(--muted);margin-right:5px}
+  .tag.ok{color:var(--ok);border-color:#1f6f36}
+  textarea{width:100%;height:210px;background:#010409;color:#c9d1d9;
+           border:1px solid var(--line);border-radius:6px;padding:11px;
+           font:12px/1.55 var(--mono);resize:vertical}
+  .verdict{margin-top:11px;padding:10px 12px;border-radius:6px;font-size:13px;
+           display:none;font-family:var(--mono)}
+  .verdict.pass{background:#0d2818;border:1px solid #1f6f36;color:var(--ok)}
+  .verdict.fail{background:#2d0f0d;border:1px solid #6f1f1f;color:var(--bad)}
+  .hint{color:var(--muted);font-size:12px;margin-top:9px}
+  .crop{border:1px solid var(--line);border-radius:6px;margin-top:11px;display:none}
+  code{font-family:var(--mono);font-size:12px;color:var(--warn)}
+</style>
+</head>
+<body>
+<header>
+  <h1>Face Identification <span>→ reverse image search → blockchain anchor</span></h1>
+  <div class="sub">Every candidate is downloaded and re-encoded; only a real face
+    match is recorded. The record's SHA-256 is anchored on-chain.</div>
+</header>
+
+<div class="wrap">
+  <div>
+    <div class="card">
+      <h2>Probe</h2>
+      <input type="file" id="file" accept="image/*">
+      <img id="crop" class="crop" alt="aligned face crop">
+
+      <label>Engines</label>
+      <select id="backend">
+        <option value="all">all available</option>
+        <option value="serpapi">Google Lens</option>
+        <option value="greverse">Google Reverse Image</option>
+        <option value="yandex">Yandex</option>
+        <option value="bing">Bing</option>
+        <option value="vision">Google Vision</option>
+      </select>
+      <div class="engines" id="engines"></div>
+
+      <div class="row">
+        <div><label>Detect conf</label>
+          <input type="number" id="conf" value="0.9" min="0.1" max="1" step="0.05"></div>
+        <div><label>Match threshold</label>
+          <input type="number" id="threshold" value="0.363" min="0" max="1" step="0.01"></div>
+      </div>
+      <label>Candidates to check</label>
+      <input type="number" id="limit" value="25" min="1" max="80">
+
+      <div class="chk"><input type="checkbox" id="social"><label for="social"
+        style="margin:0">social platforms only</label></div>
+      <div class="chk"><input type="checkbox" id="nochain"><label for="nochain"
+        style="margin:0">skip blockchain anchor</label></div>
+
+      <button id="go" disabled>Run pipeline</button>
+      <div class="hint" id="rpcnote"></div>
+    </div>
+  </div>
+
+  <div>
+    <div id="log"><span class="n">Pick an image and hit Run. A full pass takes about
+75 seconds: four search engines in parallel, then every candidate downloaded and
+re-encoded, then a Sepolia transaction.</span></div>
+
+    <div class="card result" id="result">
+      <h2>Verified match</h2>
+      <div class="kv" id="matchkv"></div>
+
+      <h2 style="margin-top:6px">Tamper check</h2>
+      <div class="hint" style="margin-top:0">This record hashes to the digest stored
+        on-chain. Edit any character below and re-verify — the digest stops matching.</div>
+      <textarea id="record" spellcheck="false"></textarea>
+      <div class="row">
+        <button class="ghost" id="verify">Re-verify against chain</button>
+        <button class="ghost" id="reset">Reset record</button>
+      </div>
+      <div class="verdict" id="verdict"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+let job = null, pristine = null, anchor = null;
+
+fetch('/api/config').then(r => r.json()).then(c => {
+  $('engines').innerHTML = c.engines.map(e =>
+    `<span class="pill ${e.available ? 'on' : ''}">${e.name}</span>`).join('');
+  $('threshold').value = c.threshold;
+  $('rpcnote').textContent = 'chain: ' + c.rpc;
+});
+
+$('file').onchange = () => { $('go').disabled = !$('file').files.length; };
+
+function line(text) {
+  const el = document.createElement('span');
+  let cls = '';
+  if (/\bMATCH\b/.test(text)) cls = 'm';
+  else if (/no match|unreachable|no face/.test(text)) cls = 'n';
+  else if (/FAILED|STOPPED|TAMPERED|failed/.test(text)) cls = 'r';
+  else if (/^=+$|STAGE|PRE-FLIGHT/.test(text)) cls = 'h';
+  el.className = cls;
+  el.textContent = text + '\n';
+  const log = $('log');
+  const stick = log.scrollTop + log.clientHeight >= log.scrollHeight - 40;
+  log.appendChild(el);
+  if (stick) log.scrollTop = log.scrollHeight;
+}
+
+$('go').onclick = async () => {
+  $('go').disabled = true;
+  $('result').style.display = 'none';
+  $('crop').style.display = 'none';
+  $('log').textContent = '';
+
+  const fd = new FormData();
+  fd.append('image', $('file').files[0]);
+  fd.append('backend', $('backend').value);
+  fd.append('conf', $('conf').value);
+  fd.append('threshold', $('threshold').value);
+  fd.append('limit', $('limit').value);
+  fd.append('social_only', $('social').checked);
+  fd.append('no_chain', $('nochain').checked);
+
+  const res = await fetch('/api/run', { method: 'POST', body: fd });
+  const data = await res.json();
+  if (data.error) { line('ERROR: ' + data.error); $('go').disabled = false; return; }
+  job = data.job_id;
+
+  const es = new EventSource('/api/log/' + job);
+  es.onmessage = e => {
+    const text = JSON.parse(e.data);
+    line(text);
+    if (/aligned  :/.test(text)) {
+      $('crop').src = '/api/crop/' + job + '?t=' + Date.now();
+      $('crop').style.display = 'block';
+    }
+  };
+  es.addEventListener('end', async () => {
+    es.close();
+    $('go').disabled = false;
+    const r = await (await fetch('/api/result/' + job)).json();
+    if (r.status === 'done' && r.result && r.result.record) showResult(r.result);
+  });
+};
+
+function showResult(r) {
+  const m = r.record.match;
+  anchor = r.anchor || null;
+  const tags = [
+    m.is_social ? '<span class="tag ok">social</span>' : '',
+    m.corroborated ? '<span class="tag ok">corroborated</span>' : '',
+    m.url_resolved ? '' : '<span class="tag">unresolved URL</span>',
+  ].join('');
+  const rows = [
+    ['cosine', `<span class="score">${m.cosine.toFixed(4)}</span> ${tags}`],
+    ['page', `<a href="${m.page_url}" target="_blank" rel="noopener">${m.page_url}</a>`],
+    ['domain', m.domain],
+    ['found by', m.found_by.join(', ')],
+    ['candidates', `${r.search.unique} unique · ${r.search.social} social · ${r.search.corroborated} corroborated`],
+  ];
+  if (anchor) {
+    rows.push(['tx', `<a href="${anchor.explorer || '#'}" target="_blank" rel="noopener">${anchor.tx_hash}</a>`]);
+    rows.push(['block', `${anchor.block_number} · chain ${anchor.chain_id}`]);
+  }
+  $('matchkv').innerHTML = rows.map(([k, v]) => `<div>${k}</div><div>${v}</div>`).join('');
+  pristine = JSON.stringify(r.record, null, 2);
+  $('record').value = pristine;
+  $('verdict').style.display = 'none';
+  $('verify').disabled = !anchor;
+  $('result').style.display = 'block';
+}
+
+$('reset').onclick = () => {
+  $('record').value = pristine;
+  $('verdict').style.display = 'none';
+};
+
+$('verify').onclick = async () => {
+  const v = $('verdict');
+  let record;
+  try { record = JSON.parse($('record').value); }
+  catch (e) { v.className = 'verdict fail'; v.style.display = 'block';
+              v.textContent = 'record is not valid JSON: ' + e.message; return; }
+  v.style.display = 'block';
+  v.className = 'verdict';
+  v.textContent = 'checking chain...';
+  const res = await fetch('/api/verify', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ record, tx: anchor.tx_hash, rpc: anchor.rpc }),
+  });
+  const d = await res.json();
+  if (d.error) { v.className = 'verdict fail'; v.textContent = d.error; return; }
+  v.className = 'verdict ' + (d.ok ? 'pass' : 'fail');
+  v.textContent = (d.ok ? 'VERIFIED — ' : 'REJECTED — ') + d.message
+    + `\non-chain ${d.info.onchain_sha256}\nlocal    ${d.info.local_sha256}`;
+};
+</script>
+</body>
+</html>

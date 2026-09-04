@@ -93,6 +93,35 @@ Then re-verify as a separate command — this is the tamper-evidence demonstrati
 .venv/bin/python verify_onchain.py
 ```
 
+## Web UI
+
+```bash
+.venv/bin/python web/server.py     # http://127.0.0.1:5000
+```
+
+Upload an image, watch the run stream line by line, and get the match plus its
+Etherscan link. The record is shown in an editable box: change any character and
+hit re-verify to watch the on-chain digest stop matching. That is the whole
+tamper-evidence argument in one click.
+
+The UI calls `pipeline.core.run` — the same function the CLI calls — so the two
+cannot drift apart. Progress reaches the browser over Server-Sent Events, since
+a run takes around 75 seconds and the log is most of what makes the result
+credible.
+
+**It is for local use.** There is no authentication, jobs are held in memory,
+and the process has access to a funded private key. Do not expose it to a
+network you do not control.
+
+### Deploying it
+
+A run exceeds the 60s function limit on Vercel's Hobby tier, and
+`opencv-python` plus `sface.onnx` comes to roughly 130 MB against a 250 MB
+bundle, so the pipeline does not belong in a serverless function. The shape
+that works is a static or Next.js front end on Vercel talking to this server
+running somewhere without a request timeout — a small VM, Fly, or Railway — with
+the private key held only by that worker.
+
 ## Which blockchain
 
 The record is canonicalised to deterministic JSON, hashed with SHA-256, and the
@@ -179,6 +208,9 @@ use it to identify or locate private individuals.
 ```
 run_pipeline.py             end-to-end CLI
 verify_onchain.py           standalone re-verification
+web/server.py               local web UI (Flask + SSE)
+web/static/index.html       the page
+pipeline/core.py            the pipeline, shared by the CLI and the UI
 pipeline/encode.py          YuNet detect + SFace encode
 pipeline/search.py          SerpApi + Vision behind one interface
 pipeline/match.py           download, re-encode, compare

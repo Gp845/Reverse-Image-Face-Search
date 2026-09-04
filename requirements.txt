@@ -3,6 +3,9 @@ opencv-python==5.0.0.93
 numpy==2.5.2
 requests==2.34.2
 
+# Local web UI (optional -- the CLI needs none of this)
+flask==3.1.3
+
 # Blockchain anchoring + re-verification
 web3==8.0.0
 python-dotenv==1.2.3

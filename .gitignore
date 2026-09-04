@@ -13,3 +13,7 @@ samples/
 # Large model weights stay out:
 *.pth
 gfpgan/weights/
+
+# Web UI job scratch
+out/web/
+out/uploads/

@@ -39,7 +39,7 @@ def fetch_image(url, timeout=30):
 
 def verify_candidates(encoder, probe_embedding, candidates, threshold=COSINE_THRESHOLD,
                       limit=25, social_only=False, verbose=True,
-                      workers=FETCH_WORKERS):
+                      workers=FETCH_WORKERS, emit=print):
     """Return candidates whose face genuinely matches the probe, best score first.
 
     Downloads run concurrently because they are pure I/O and dominate the wall
@@ -68,18 +68,18 @@ def verify_candidates(encoder, probe_embedding, candidates, threshold=COSINE_THR
     for n, ((c, _url), img) in enumerate(zip(queued, images), start=1):
         if img is None:
             if verbose:
-                print(f"    [{n:2d}] unreachable       {c.domain}")
+                emit(f"    [{n:2d}] unreachable       {c.domain}")
             continue
         emb, _ = encoder.encode_primary(img)
         if emb is None:
             if verbose:
-                print(f"    [{n:2d}] no face in image  {c.domain}")
+                emit(f"    [{n:2d}] no face in image  {c.domain}")
             continue
         score = cosine(probe_embedding, emb)
         ok = score >= threshold
         if verbose:
-            print(f"    [{n:2d}] cos={score:+.4f} {'MATCH  ' if ok else 'no match'} "
-                  f"{c.domain} {'(corroborated)' if c.corroborated else ''}")
+            emit(f"    [{n:2d}] cos={score:+.4f} {'MATCH  ' if ok else 'no match'} "
+                 f"{c.domain} {'(corroborated)' if c.corroborated else ''}")
         if ok:
             confirmed.append((score, c))
     # Ties are real: the same image reached us as two candidates (say an
