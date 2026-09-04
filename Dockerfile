@@ -24,7 +24,15 @@ COPY face_detection_yunet_2026may.onnx ./
 
 ENV PYTHONUNBUFFERED=1 \
     HOST=0.0.0.0 \
-    PORT=7860
+    PORT=7860 \
+    # glibc gives each thread its own malloc arena, which inflates RSS well
+    # beyond live data once the download pool spins up. Capping the arenas
+    # costs a little contention and is worth it under a hard memory limit.
+    MALLOC_ARENA_MAX=2 \
+    # Sized for a 512MB container. Raise on a larger host.
+    MAX_IMAGE_SIDE=1600 \
+    MAX_CANDIDATE_SIDE=1280 \
+    MATCH_WORKERS=4
 
 EXPOSE 7860
 

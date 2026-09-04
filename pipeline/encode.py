@@ -31,13 +31,25 @@ DEFAULT_THRESHOLD = 0.1
 # partly occluded -- that 0.9 discards.
 DEFAULT_CONF = 0.5
 
-# Longest side an image may have before detection. YuNet's cost grows far
-# faster than the pixel count -- measured 0.05s at 1080px, 0.44s at 3000px,
-# 6.9s at 6000px and 154s at 9000px -- so a single oversized image stalls the
-# whole run. A 12MB JPEG, which the download cap happily allows, can decode to
-# over 100 megapixels. Nothing here needs that resolution: faces end up as
-# 112x112 crops either way.
-MAX_SIDE = 3000
+# Longest side an image may have before detection. This is a memory setting as
+# much as a speed one: YuNet's DNN buffers scale with input resolution, and on
+# one 2347x1760 probe the detector's own allocations dominated everything else
+# in the process.
+#
+#   cap    resolution   process RSS   detect   confidence
+#   3000   1760x2347       457 MB     0.26s      0.955
+#   2000   1499x2000       362 MB     0.15s      0.950
+#   1600   1199x1599       296 MB     0.11s      0.947
+#   1280    959x1280       237 MB     0.10s      0.953
+#   1024    767x1024       203 MB     0.07s      0.941
+#
+# Confidence is flat across that range while memory varies by 250MB, so the
+# extra resolution buys nothing -- faces become 112x112 crops regardless. The
+# ceiling matters because a 512MB container has roughly 250MB left after the
+# models load. Raise MAX_IMAGE_SIDE on a larger host if you need small or
+# distant faces, which is the one thing downscaling genuinely costs.
+MAX_SIDE = int(os.getenv("MAX_IMAGE_SIDE", "1600"))
+CANDIDATE_MAX_SIDE = int(os.getenv("MAX_CANDIDATE_SIDE", "1280"))
 
 
 def downscale(image, max_side=MAX_SIDE):

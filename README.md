@@ -146,6 +146,14 @@ Vercel's 60s Hobby limit, and cv2 plus the models is ~130 MB against a 250 MB
 bundle. If you want a Vercel front end, point it at this server running
 somewhere without a request timeout.
 
+Images are downscaled before detection — 1600px for the probe, 1280px for
+candidates — because YuNet's DNN buffers scale with input resolution, not
+because of decode size. On one 2347x1760 probe the detector alone accounted for
+278 MB of a 512 MB budget, while detection confidence stayed flat from 1024px to
+3000px (0.941 to 0.955). `MAX_IMAGE_SIDE`, `MAX_CANDIDATE_SIDE` and
+`MATCH_WORKERS` raise those limits on a larger host; the one real cost of
+downscaling is missing small or distant faces.
+
 `render.yaml` is a Render Blueprint for the free tier — connect the repo and it
 builds the Dockerfile, prompting for the three secrets rather than storing them.
 Peak RSS is ~233 MB against the free tier's 512 MB, and although 0.1 CPU sounds

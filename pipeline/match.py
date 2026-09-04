@@ -9,16 +9,21 @@ embedding above SFace's published threshold. That is what makes the on-chain
 record mean something.
 """
 
+import os
 from concurrent.futures import ThreadPoolExecutor
 
 import cv2
 import numpy as np
 import requests
 
-from .encode import COSINE_THRESHOLD, cosine, downscale
+from .encode import CANDIDATE_MAX_SIDE, COSINE_THRESHOLD, cosine, downscale
 
 MAX_BYTES = 12 * 1024 * 1024
-FETCH_WORKERS = 8
+
+# Window size for candidate downloads, and so the number of decoded images held
+# at once. Overridable because it is really a memory setting: a 512MB container
+# wants a smaller window than a laptop does.
+FETCH_WORKERS = int(os.getenv("MATCH_WORKERS", "4"))
 
 
 def fetch_image(url, timeout=30):
@@ -36,7 +41,7 @@ def fetch_image(url, timeout=30):
         # JPEG that expands to a resolution detection cannot process in
         # reasonable time, and the encode loop is serial, so one such candidate
         # halts every candidate behind it.
-        return downscale(img)
+        return downscale(img, CANDIDATE_MAX_SIDE)
     except Exception:
         return None
 
@@ -65,27 +70,39 @@ def verify_candidates(encoder, probe_embedding, candidates, threshold=COSINE_THR
     if not queued:
         return []
 
-    with ThreadPoolExecutor(max_workers=min(workers, len(queued))) as pool:
-        images = list(pool.map(lambda q: fetch_image(q[1]), queued))
-
     confirmed = []
-    for n, ((c, _url), img) in enumerate(zip(queued, images), start=1):
-        if img is None:
-            if verbose:
-                emit(f"    [{n:2d}] unreachable       {c.domain}")
-            continue
-        emb, _ = encoder.encode_primary(img)
-        if emb is None:
-            if verbose:
-                emit(f"    [{n:2d}] no face in image  {c.domain}")
-            continue
-        score = cosine(probe_embedding, emb)
-        ok = score >= threshold
-        if verbose:
-            emit(f"    [{n:2d}] cos={score:+.4f} {'MATCH  ' if ok else 'no match'} "
-                 f"{c.domain} {'(corroborated)' if c.corroborated else ''}")
-        if ok:
-            confirmed.append((score, c))
+    n = 0
+    # Fetch in windows rather than all at once. Downloading every candidate up
+    # front held each decoded image in memory simultaneously -- 25 of them is
+    # ~680MB at the probe's size cap, which a 512MB container cannot survive,
+    # and the process is killed mid-encode with no error to show for it. A
+    # window keeps the parallelism and bounds the footprint to `workers`
+    # images, each freed as soon as it has been encoded.
+    with ThreadPoolExecutor(max_workers=min(workers, len(queued))) as pool:
+        for start in range(0, len(queued), workers):
+            window = queued[start:start + workers]
+            images = list(pool.map(lambda q: fetch_image(q[1]), window))
+            for (c, _url), img in zip(window, images):
+                n += 1
+                if img is None:
+                    if verbose:
+                        emit(f"    [{n:2d}] unreachable       {c.domain}")
+                    continue
+                emb, _ = encoder.encode_primary(img)
+                del img
+                if emb is None:
+                    if verbose:
+                        emit(f"    [{n:2d}] no face in image  {c.domain}")
+                    continue
+                score = cosine(probe_embedding, emb)
+                ok = score >= threshold
+                if verbose:
+                    emit(f"    [{n:2d}] cos={score:+.4f} {'MATCH  ' if ok else 'no match'} "
+                         f"{c.domain} {'(corroborated)' if c.corroborated else ''}")
+                if ok:
+                    confirmed.append((score, c))
+            images = None
+
     # Ties are real: the same image reached us as two candidates (say an
     # Instagram post and an unresolved redirector pointing at it), so they score
     # identically. Break toward the one that makes a better record rather than
