@@ -5,6 +5,10 @@ __pycache__/
 out/
 cropped_faces/
 
+# Test photos stay local -- they are pictures of real people and have no
+# business in a public repo. Any image path works as a probe.
+samples/
+
 # The YuNet detector (229KB) is committed so the repo runs out of the box.
 # Large model weights stay out:
 *.pth
