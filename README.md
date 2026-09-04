@@ -1,3 +1,14 @@
+---
+title: Face ID Blockchain Verification
+emoji: 🔗
+colorFrom: blue
+colorTo: gray
+sdk: docker
+app_port: 7860
+pinned: false
+short_description: Face match on the open web, anchored on Ethereum Sepolia
+---
+
 # HH Goa 2026 — Task 3: Face ID + Blockchain Verification
 
 A pipeline that detects and encodes a face, finds a **real** matching post on the
@@ -109,18 +120,30 @@ cannot drift apart. Progress reaches the browser over Server-Sent Events, since
 a run takes around 75 seconds and the log is most of what makes the result
 credible.
 
-**It is for local use.** There is no authentication, jobs are held in memory,
-and the process has access to a funded private key. Do not expose it to a
-network you do not control.
+### Access control
+
+A reachable instance identifies faces on demand, spends a funded key, and burns
+a metered search quota, so `ACCESS_TOKEN` gates every `/api/` route. Supply it
+as `?token=...` or an `X-Access-Token` header; the page reads it from its own
+URL and passes it on. Binding to anything other than loopback without a token
+set is refused at startup rather than left to whoever finds the URL.
+
+`MAX_CONCURRENT_JOBS` (default 2) caps simultaneous runs and `MAX_UPLOAD_MB`
+(default 12) caps upload size.
 
 ### Deploying it
 
-A run exceeds the 60s function limit on Vercel's Hobby tier, and
-`opencv-python` plus `sface.onnx` comes to roughly 130 MB against a 250 MB
-bundle, so the pipeline does not belong in a serverless function. The shape
-that works is a static or Next.js front end on Vercel talking to this server
-running somewhere without a request timeout — a small VM, Fly, or Railway — with
-the private key held only by that worker.
+`Dockerfile` builds the whole thing. It swaps `opencv-python` for
+`opencv-python-headless`, since a container has no GUI, and runs one gunicorn
+worker with threads — multiple workers would each load their own copy of both
+models, and because jobs live in process memory a request routed to a different
+worker would not find its own job.
+
+It does **not** belong in a serverless function: a run takes ~75s against
+Vercel's 60s Hobby limit, and cv2 plus the models is ~130 MB against a 250 MB
+bundle. Peak RSS is ~233 MB, so any container host with 512 MB will do. If you
+want a Vercel front end, point it at this server running somewhere without a
+request timeout.
 
 ## Which blockchain
 

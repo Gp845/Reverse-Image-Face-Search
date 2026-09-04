@@ -38,9 +38,40 @@ ROOT = os.path.dirname(HERE)
 UPLOADS = os.path.join(ROOT, "out", "uploads")
 SENTINEL = object()
 
+# A deployed instance is a face-identification endpoint that spends a funded key
+# and a metered search quota. ACCESS_TOKEN gates every route that costs
+# something. Binding to anything other than loopback without one is refused
+# outright rather than left to whoever finds the URL.
+ACCESS_TOKEN = os.getenv("ACCESS_TOKEN", "").strip()
+MAX_CONCURRENT_JOBS = int(os.getenv("MAX_CONCURRENT_JOBS", "2"))
+MAX_UPLOAD_MB = int(os.getenv("MAX_UPLOAD_MB", "12"))
+
 app = Flask(__name__, static_folder=os.path.join(HERE, "static"))
+app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_MB * 1024 * 1024
 JOBS = {}
 JOBS_LOCK = threading.Lock()
+
+
+def _token_ok():
+    if not ACCESS_TOKEN:
+        return True
+    supplied = (request.headers.get("X-Access-Token")
+                or request.args.get("token")
+                or request.form.get("token") or "")
+    # compare_digest keeps the check constant-time; a token is a shared secret.
+    import hmac
+    return hmac.compare_digest(supplied, ACCESS_TOKEN)
+
+
+@app.before_request
+def _gate():
+    if request.path.startswith("/api/") and not _token_ok():
+        return jsonify(error="unauthorized: missing or bad access token"), 401
+    return None
+
+
+def _running_jobs():
+    return sum(1 for j in JOBS.values() if j["status"] == "running")
 
 
 class LogSink(io.TextIOBase):
@@ -95,6 +126,10 @@ def api_run():
     upload = request.files.get("image")
     if not upload or not upload.filename:
         return jsonify(error="no image uploaded"), 400
+    with JOBS_LOCK:
+        if _running_jobs() >= MAX_CONCURRENT_JOBS:
+            return jsonify(error=f"busy: {MAX_CONCURRENT_JOBS} runs already in "
+                                 "flight, try again shortly"), 429
 
     job_id = uuid.uuid4().hex[:12]
     out_dir = os.path.join(ROOT, "out", "web", job_id)
@@ -200,10 +235,19 @@ def api_config():
                  for b in build_backends()],
         rpc=os.getenv("RPC_URL", "memory"),
         threshold=COSINE_THRESHOLD,
+        gated=bool(ACCESS_TOKEN),
     )
 
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", "5000"))
-    print(f"  UI on http://127.0.0.1:{port}   (local use only -- no auth)")
-    app.run(host="127.0.0.1", port=port, threaded=True, debug=False)
+    host = os.getenv("HOST", "127.0.0.1")
+    if host != "127.0.0.1" and not ACCESS_TOKEN:
+        raise SystemExit(
+            "refusing to listen on " + host + " without ACCESS_TOKEN set.\n"
+            "This service identifies faces, spends a funded key and burns a\n"
+            "metered search quota. Set ACCESS_TOKEN, or bind to 127.0.0.1.")
+    if ACCESS_TOKEN:
+        print(f"  access token required (?token=... or X-Access-Token header)")
+    print(f"  UI on http://{host}:{port}")
+    app.run(host=host, port=port, threaded=True, debug=False)

@@ -1,0 +1,10 @@
+.venv/
+.git/
+out/
+samples/
+__pycache__/
+**/__pycache__/
+*.pyc
+.env
+enhance.py
+detect_and_crop_faces.py

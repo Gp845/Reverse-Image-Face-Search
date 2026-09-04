@@ -137,11 +137,23 @@ re-encoded, then a Sepolia transaction.</span></div>
 const $ = id => document.getElementById(id);
 let job = null, pristine = null, anchor = null;
 
-fetch('/api/config').then(r => r.json()).then(c => {
+// A deployed instance is gated by a shared token; the link carries it as
+// ?token=... so the page can pass it on every API call.
+const TOKEN = new URLSearchParams(location.search).get('token') || '';
+const withTok = u => TOKEN ? u + (u.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(TOKEN) : u;
+const authHeaders = TOKEN ? { 'X-Access-Token': TOKEN } : {};
+
+fetch(withTok('/api/config'), { headers: authHeaders }).then(r => {
+  if (r.status === 401) throw new Error('unauthorized — this instance needs ?token=... in the URL');
+  return r.json();
+}).then(c => {
   $('engines').innerHTML = c.engines.map(e =>
     `<span class="pill ${e.available ? 'on' : ''}">${e.name}</span>`).join('');
   $('threshold').value = c.threshold;
-  $('rpcnote').textContent = 'chain: ' + c.rpc;
+  $('rpcnote').textContent = 'chain: ' + c.rpc + (c.gated ? ' · token required' : '');
+}).catch(e => {
+  $('log').innerHTML = '<span class="r">' + e.message + '</span>';
+  $('go').disabled = true;
 });
 
 $('file').onchange = () => { $('go').disabled = !$('file').files.length; };
@@ -176,24 +188,27 @@ $('go').onclick = async () => {
   fd.append('social_only', $('social').checked);
   fd.append('no_chain', $('nochain').checked);
 
-  const res = await fetch('/api/run', { method: 'POST', body: fd });
+  const res = await fetch(withTok('/api/run'), { method: 'POST', body: fd,
+                                                headers: authHeaders });
   const data = await res.json();
   if (data.error) { line('ERROR: ' + data.error); $('go').disabled = false; return; }
   job = data.job_id;
 
-  const es = new EventSource('/api/log/' + job);
+  // EventSource cannot set headers, so the token rides in the query string.
+  const es = new EventSource(withTok('/api/log/' + job));
   es.onmessage = e => {
     const text = JSON.parse(e.data);
     line(text);
     if (/aligned  :/.test(text)) {
-      $('crop').src = '/api/crop/' + job + '?t=' + Date.now();
+      $('crop').src = withTok('/api/crop/' + job + '?t=' + Date.now());
       $('crop').style.display = 'block';
     }
   };
   es.addEventListener('end', async () => {
     es.close();
     $('go').disabled = false;
-    const r = await (await fetch('/api/result/' + job)).json();
+    const r = await (await fetch(withTok('/api/result/' + job),
+                                 { headers: authHeaders })).json();
     if (r.status === 'done' && r.result && r.result.record) showResult(r.result);
   });
 };
@@ -239,8 +254,9 @@ $('verify').onclick = async () => {
   v.style.display = 'block';
   v.className = 'verdict';
   v.textContent = 'checking chain...';
-  const res = await fetch('/api/verify', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
+  const res = await fetch(withTok('/api/verify'), {
+    method: 'POST',
+    headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders),
     body: JSON.stringify({ record, tx: anchor.tx_hash, rpc: anchor.rpc }),
   });
   const d = await res.json();
