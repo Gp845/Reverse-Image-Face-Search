@@ -62,6 +62,32 @@ class FaceEncoder:
         return self.encode_primary(image)
 
 
+def preview_crop(image, face_row, pad=0.45, top_extra=0.18):
+    """A human-viewable crop of a detected face.
+
+    Deliberately separate from alignCrop(). alignCrop produces the 112x112
+    framing SFace was trained on -- tight, chin-to-brow, no context -- which is
+    correct for the embedding and unpleasant to look at. Widening *that* would
+    change every cosine score, so this pads the raw YuNet box instead and
+    leaves the recognition path untouched.
+
+    Extra padding goes above the box because YuNet's box starts around the brow
+    line; without it the crop clips the top of the head. The result is clamped
+    to the image, so a face near an edge yields an off-centre crop rather than
+    a black border.
+    """
+    h, w = image.shape[:2]
+    x, y, bw, bh = (float(v) for v in face_row[0:4])
+    dx, dy = bw * pad, bh * pad
+    x1 = int(max(0, x - dx))
+    y1 = int(max(0, y - dy - bh * top_extra))
+    x2 = int(min(w, x + bw + dx))
+    y2 = int(min(h, y + bh + dy))
+    if x2 <= x1 or y2 <= y1:
+        return image
+    return image[y1:y2, x1:x2]
+
+
 def cosine(a, b):
     na, nb = np.linalg.norm(a), np.linalg.norm(b)
     if na == 0 or nb == 0:

@@ -203,7 +203,10 @@ def api_crop(job_id):
     job = JOBS.get(job_id)
     if not job:
         return jsonify(error="unknown job"), 404
-    path = os.path.join(job["out"], "probe_aligned.jpg")
+    # Prefer the padded preview; the 112x112 alignCrop is for the model, not eyes.
+    path = os.path.join(job["out"], "probe_preview.jpg")
+    if not os.path.exists(path):
+        path = os.path.join(job["out"], "probe_aligned.jpg")
     if not os.path.exists(path):
         return jsonify(error="no crop yet"), 404
     return send_file(path, mimetype="image/jpeg")

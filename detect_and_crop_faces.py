@@ -73,7 +73,7 @@ def main():
     parser.add_argument("--conf", type=float, default=0.6, help="Confidence threshold (0-1)")
     parser.add_argument("--nms", type=float, default=0.3, help="NMS IoU threshold (0-1)")
     parser.add_argument("--top-k", type=int, default=5000, help="Max candidate boxes before NMS")
-    parser.add_argument("--pad", type=float, default=0.2, help="Padding fraction around each face")
+    parser.add_argument("--pad", type=float, default=0.35, help="Padding fraction around each face")
     parser.add_argument("--model", default=DEFAULT_MODEL)
     parser.add_argument("--no-align", action="store_true", help="Disable facial alignment (tilt fixing)")
     parser.add_argument("--no-boxes-image", action="store_true", help="Skip saving annotated full image")

@@ -199,7 +199,7 @@ $('go').onclick = async () => {
   es.onmessage = e => {
     const text = JSON.parse(e.data);
     line(text);
-    if (/aligned  :/.test(text)) {
+    if (/preview  :/.test(text)) {   // fires after the padded crop is on disk
       $('crop').src = withTok('/api/crop/' + job + '?t=' + Date.now());
       $('crop').style.display = 'block';
     }

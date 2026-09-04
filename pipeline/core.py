@@ -20,7 +20,7 @@ from datetime import datetime, timezone
 import cv2
 
 from . import chain
-from .encode import COSINE_THRESHOLD, FaceEncoder
+from .encode import COSINE_THRESHOLD, FaceEncoder, preview_crop
 from .match import verify_candidates
 from .search import build_backends, merge, upload_for_public_url
 
@@ -82,11 +82,18 @@ def run(image_path, *, backend="all", conf=0.9, threshold=COSINE_THRESHOLD,
     emit(f"  detector : YuNet   confidence {float(row[-1]):.3f}")
     emit(f"  face box : x={int(x)} y={int(y)} w={int(w)} h={int(h)}")
     emit(f"  encoder  : SFace   {len(embedding)}-d embedding")
+    # Two crops on purpose: the 112x112 alignCrop the encoder actually consumed,
+    # and a padded one for a person to look at.
     crop = enc.rec.alignCrop(image, row)
     crop_path = os.path.join(out, "probe_aligned.jpg")
     cv2.imwrite(crop_path, crop)
-    emit(f"  aligned  : {crop_path}  {crop.shape[1]}x{crop.shape[0]}")
+    preview = preview_crop(image, row)
+    preview_path = os.path.join(out, "probe_preview.jpg")
+    cv2.imwrite(preview_path, preview)
+    emit(f"  aligned  : {crop_path}  {crop.shape[1]}x{crop.shape[0]} (fed to SFace)")
+    emit(f"  preview  : {preview_path}  {preview.shape[1]}x{preview.shape[0]}")
     result["crop_path"] = crop_path
+    result["preview_path"] = preview_path
     result["detection"] = {"confidence": round(float(row[-1]), 4),
                            "box": [int(x), int(y), int(w), int(h)]}
 
