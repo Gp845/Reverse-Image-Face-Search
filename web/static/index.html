@@ -81,8 +81,18 @@
      the 340px column, over the log. The crop is as large as the source face,
      so it can be far wider than the sidebar. max-height keeps a tall portrait
      from pushing the controls off-screen. */
-  .crop{border:1px solid var(--line);border-radius:6px;margin-top:11px;display:none;
-        max-width:100%;max-height:300px;height:auto;width:auto;object-fit:contain}
+  #crops{display:flex;flex-wrap:wrap;gap:7px;margin-top:11px}
+  #crops img{border:1px solid var(--line);border-radius:6px;height:96px;width:auto;
+             max-width:100%;object-fit:contain;background:#010409}
+  .faceblock{border-top:1px solid var(--line);padding-top:13px;margin-top:15px}
+  .faceblock:first-of-type{border-top:0;padding-top:0;margin-top:4px}
+  .fh{display:flex;align-items:center;gap:11px;margin-bottom:9px}
+  .fh img{width:60px;height:60px;object-fit:cover;border-radius:6px;
+          border:1px solid var(--line);background:#010409;flex:none}
+  .fh .t{font-size:13px}
+  .fh .t b{font-family:var(--mono);color:var(--ok);font-size:14px}
+  .fh .t span{color:var(--muted);font-size:12px;display:block;margin-top:2px}
+  .fh .t.none b{color:var(--muted)}
   code{font-family:var(--mono);font-size:12px;color:var(--warn)}
 </style>
 </head>
@@ -98,7 +108,7 @@
     <div class="card">
       <h2>Probe</h2>
       <input type="file" id="file" accept="image/*">
-      <img id="crop" class="crop" alt="aligned face crop">
+      <div id="crops"></div>
 
       <label>Engines</label>
       <select id="backend">
@@ -144,11 +154,8 @@ re-encoded, then a Sepolia transaction.</span></div>
       <h2>Verified match</h2>
       <div class="kv" id="matchkv"></div>
 
-      <h2 id="faceshead" style="margin-top:6px;display:none">Faces identified</h2>
-      <div class="gallery" id="facegallery"></div>
-
-      <h2 id="galleryhead" style="margin-top:6px;display:none">Top matches</h2>
-      <div class="gallery" id="gallery"></div>
+      <h2 id="faceshead" style="margin-top:6px">Matches per face</h2>
+      <div id="facegallery"></div>
 
       <h2 style="margin-top:6px">Tamper check</h2>
       <div class="hint" style="margin-top:0">This record hashes to the digest stored
@@ -217,27 +224,40 @@ function line(text) {
   if (stick) log.scrollTop = log.scrollHeight;
 }
 
-// Poll for the face crop from the moment the run starts. It used to be
-// triggered by matching a line of log text, which broke silently the first
-// time that line was reworded -- the crop then only appeared at the very end,
-// via the fallback. Nothing here depends on the wording now: the endpoint 404s
-// until stage 1 writes the file, so retrying is the whole mechanism.
-function showCrop(tries = 30, delay = 1200) {
+// Poll for the probe's face crops from the moment the run starts. Each face
+// gets its own tile and polls independently, so they appear as stage 1 writes
+// them. Nothing here reads the log: an earlier version matched a line of text
+// and broke silently the first time that line was reworded.
+function showCrops(n) {
+  const box = $('crops');
+  box.innerHTML = '';
+  for (let i = 1; i <= n; i++) {
+    const img = document.createElement('img');
+    img.style.display = 'none';
+    img.alt = 'face ' + i;
+    img.title = 'face ' + i;
+    box.appendChild(img);
+    pollCrop(img, i, n);
+  }
+}
+
+function pollCrop(img, i, n, tries = 30) {
   if (!job) return;
-  const img = $('crop');
-  const url = withTok('/api/crop/' + job + '?t=' + Date.now());
+  // With one face the run writes an unnumbered crop, so ask for that instead.
+  const path = n === 1 ? '/api/crop/' + job : '/api/crop/' + job + '/' + i;
   img.onload = () => { img.style.display = 'block'; };
   img.onerror = () => {
-    if (tries > 1) setTimeout(() => showCrop(tries - 1, delay), delay);
+    if (tries > 1) setTimeout(() => pollCrop(img, i, n, tries - 1), 1200);
   };
-  img.src = url;
+  img.src = withTok(path + (path.includes('?') ? '&' : '?') + 't=' + Date.now());
 }
 
 $('go').onclick = async () => {
   $('go').disabled = true;
   $('result').style.display = 'none';
-  $('crop').style.display = 'none';
+  $('crops').innerHTML = '';
   $('log').textContent = '';
+  const requestedFaces = Math.max(1, Math.min(5, +$('faces').value || 1));
 
   const fd = new FormData();
   fd.append('image', $('file').files[0]);
@@ -254,7 +274,7 @@ $('go').onclick = async () => {
   const data = await res.json();
   if (data.error) { line('ERROR: ' + data.error); $('go').disabled = false; return; }
   job = data.job_id;
-  showCrop();   // starts polling; stage 1 usually lands within a few seconds
+  showCrops(requestedFaces);   // stage 1 usually lands within a couple of seconds
 
   // EventSource cannot set headers, so the token rides in the query string.
   const es = new EventSource(withTok('/api/log/' + job));
@@ -265,7 +285,6 @@ $('go').onclick = async () => {
   es.addEventListener('end', async () => {
     es.close();
     $('go').disabled = false;
-    showCrop();
     const r = await (await fetch(withTok('/api/result/' + job),
                                  { headers: authHeaders })).json();
     if (r.status === 'done' && r.result && r.result.record) showResult(r.result);
@@ -292,8 +311,7 @@ function showResult(r) {
     rows.push(['block', `${anchor.block_number} · chain ${anchor.chain_id}`]);
   }
   $('matchkv').innerHTML = rows.map(([k, v]) => `<div>${k}</div><div>${v}</div>`).join('');
-  renderFaces(r.face_results || [], r.record);
-  renderGallery(r.matches || []);
+  renderFaces(r.face_results || []);
   pristine = JSON.stringify(r.record, null, 2);
   $('record').value = pristine;
   $('verdict').style.display = 'none';
@@ -305,46 +323,46 @@ function showResult(r) {
 // the source, so some hosts will refuse to serve them to another origin -- a
 // tile that fails to load hides its image rather than showing a broken icon,
 // keeping the score and domain, which are the parts that matter.
-// One tile per face the run processed, each showing its own crop and its own
-// best match, so a group photo reads as several independent identifications
-// rather than one number.
-function renderFaces(faceResults, record) {
-  const head = $('faceshead'), box = $('facegallery');
-  if (faceResults.length < 2) { head.style.display = 'none'; box.innerHTML = ''; return; }
+// One block per face: the probe's own crop on the left, then that face's top
+// matches as thumbnails of the images it actually matched. Showing the probe
+// crop alone told you a face was identified but never what it was identified
+// against, which is the part worth seeing.
+function renderFaces(faceResults) {
+  const box = $('facegallery'), head = $('faceshead');
+  if (!faceResults.length) { box.innerHTML = ''; head.style.display = 'none'; return; }
   head.style.display = 'block';
-  head.textContent = `Faces identified (${faceResults.filter(f => f.matches && f.matches.length).length} of ${faceResults.length})`;
-  box.innerHTML = faceResults.map(f => {
-    const m = (f.matches || [])[0];
-    const href = m ? (m.page_url || '#') : '#';
-    return `<a class="g ${m ? 'top' : ''}" href="${href}" target="_blank" rel="noopener">
-      <img src="${withTok('/api/crop/' + job + '/' + f.index)}" alt=""
-           onerror="this.style.display='none'">
-      <div class="meta">
-        <span class="sc">${m ? m.cosine.toFixed(4) : '—'}</span>
-        <span class="dm">${m ? m.domain : 'no match'}</span>
-        <span class="bk">face ${f.index} · ${f.box[2]}x${f.box[3]}px</span>
-      </div></a>`;
-  }).join('');
-}
+  const hit = faceResults.filter(f => (f.matches || []).length).length;
+  head.textContent = faceResults.length === 1
+    ? 'Matches' : `Matches per face (${hit} of ${faceResults.length} identified)`;
 
-function renderGallery(matches) {
-  const top = matches.slice(0, 10);
-  const head = $('galleryhead'), box = $('gallery');
-  if (!top.length) { head.style.display = 'none'; box.innerHTML = ''; return; }
-  head.style.display = 'block';
-  head.textContent = `Top matches (${top.length} of ${matches.length})`;
-  box.innerHTML = top.map((m, i) => {
-    const url = m.page_url || m.image_url || '#';
-    const tags = [m.is_social ? 'social' : '', m.corroborated ? 'x2' : '']
-                   .filter(Boolean).join(' · ');
-    return `<a class="g ${i === 0 ? 'top' : ''}" href="${url}" target="_blank" rel="noopener">
-      <img src="${m.image_url || ''}" alt="" loading="lazy"
-           onerror="this.style.display='none'">
-      <div class="meta">
-        <span class="sc">${m.cosine.toFixed(4)}</span>
-        <span class="dm" title="${m.domain}">${m.domain || '—'}</span>
-        <span class="bk">${m.found_by.join(',')}${tags ? ' · ' + tags : ''}</span>
-      </div></a>`;
+  box.innerHTML = faceResults.map(f => {
+    const ms = f.matches || [];
+    const top = ms.slice(0, 10);
+    const best = ms[0];
+    const crop = withTok('/api/crop/' + job + '/' + f.index);
+    const headline = best
+      ? `<b>${best.cosine.toFixed(4)}</b><span>${best.domain} · ${ms.length} match${ms.length === 1 ? '' : 'es'} · showing top ${top.length}</span>`
+      : `<b>no match</b><span>nothing passed the face check</span>`;
+    const tiles = top.map((m, i) => `
+      <a class="g ${i === 0 ? 'top' : ''}" href="${m.page_url || m.image_url || '#'}"
+         target="_blank" rel="noopener" title="${(m.title || '').replace(/"/g, '&quot;')}">
+        <img src="${m.image_url || ''}" alt="" loading="lazy"
+             onerror="this.style.display='none'">
+        <div class="meta">
+          <span class="sc">${m.cosine.toFixed(4)}</span>
+          <span class="dm" title="${m.domain}">${m.domain || '—'}</span>
+          <span class="bk">${m.found_by.join(',')}${m.is_social ? ' · social' : ''}${m.corroborated ? ' · x2' : ''}</span>
+        </div></a>`).join('');
+    return `<div class="faceblock">
+      <div class="fh">
+        <img src="${crop}" alt="" onerror="this.style.display='none'">
+        <div class="t ${best ? '' : 'none'}">Face ${f.index}
+          <span>${f.box[2]}x${f.box[3]}px · confidence ${f.confidence}</span>
+          ${headline}
+        </div>
+      </div>
+      <div class="gallery">${tiles || '<span class="hint">no matched images</span>'}</div>
+    </div>`;
   }).join('');
 }
 
