@@ -173,6 +173,22 @@ function line(text) {
   if (stick) log.scrollTop = log.scrollHeight;
 }
 
+// Load the face crop. Called when the log announces it and again when the run
+// ends, because tying an image to a regex over log text means any wording
+// change silently breaks the display -- and polls briefly, since the endpoint
+// 404s until the file lands.
+function showCrop(tries = 6) {
+  if (!job) return;
+  const img = $('crop');
+  const url = withTok('/api/crop/' + job + '?t=' + Date.now());
+  img.onload = () => { img.style.display = 'block'; };
+  img.onerror = () => {
+    if (tries > 1) setTimeout(() => showCrop(tries - 1), 800);
+    else line('(face crop could not be loaded from ' + url + ')');
+  };
+  img.src = url;
+}
+
 $('go').onclick = async () => {
   $('go').disabled = true;
   $('result').style.display = 'none';
@@ -199,14 +215,12 @@ $('go').onclick = async () => {
   es.onmessage = e => {
     const text = JSON.parse(e.data);
     line(text);
-    if (/preview  :/.test(text)) {   // fires after the padded crop is on disk
-      $('crop').src = withTok('/api/crop/' + job + '?t=' + Date.now());
-      $('crop').style.display = 'block';
-    }
+    if (/preview  :/.test(text)) showCrop();
   };
   es.addEventListener('end', async () => {
     es.close();
     $('go').disabled = false;
+    showCrop();
     const r = await (await fetch(withTok('/api/result/' + job),
                                  { headers: authHeaders })).json();
     if (r.status === 'done' && r.result && r.result.record) showResult(r.result);
