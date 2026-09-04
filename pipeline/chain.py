@@ -55,7 +55,7 @@ def digest(record):
 _MEMORY_W3 = None
 
 
-def connect(rpc_url=None):
+def connect(rpc_url=None, attempts=4, emit=None):
     """Connect to any JSON-RPC endpoint, or an in-process chain.
 
     rpc_url="memory" spins up an ephemeral EVM inside this process so the repo
@@ -63,6 +63,13 @@ def connect(rpc_url=None):
     real submission: an in-memory chain dies with the process, so cross-process
     re-verification -- the thing the task actually asks you to demonstrate --
     needs a persistent node (Anvil) or a public testnet.
+
+    Retries before giving up. A single failed liveness check used to abort the
+    run, and stage 4 is the worst possible place for that: the search quota is
+    already spent and the record is already written, so a momentary DNS or
+    network blip threw away a minute of real work and, in a single-take
+    recording, the take with it. Public endpoints are exactly the kind that
+    blip.
     """
     global _MEMORY_W3
     rpc_url = rpc_url or os.getenv("RPC_URL", "http://127.0.0.1:8545")
@@ -71,10 +78,24 @@ def connect(rpc_url=None):
             from web3 import EthereumTesterProvider
             _MEMORY_W3 = Web3(EthereumTesterProvider())
         return _MEMORY_W3
-    w3 = Web3(Web3.HTTPProvider(rpc_url, request_kwargs={"timeout": 60}))
-    if not w3.is_connected():
-        raise ConnectionError(f"no JSON-RPC at {rpc_url}")
-    return w3
+    say = emit or (lambda _m: None)
+    last = None
+    for attempt in range(1, attempts + 1):
+        w3 = Web3(Web3.HTTPProvider(rpc_url, request_kwargs={"timeout": 60}))
+        try:
+            if w3.is_connected():
+                if attempt > 1:
+                    say(f"  rpc reachable on attempt {attempt}")
+                return w3
+            last = "is_connected() was false"
+        except Exception as exc:
+            last = f"{type(exc).__name__}: {exc}"
+        if attempt < attempts:
+            delay = 2 ** (attempt - 1)
+            say(f"  rpc unreachable ({last}), retrying in {delay}s "
+                f"[{attempt}/{attempts}]")
+            time.sleep(delay)
+    raise ConnectionError(f"no JSON-RPC at {rpc_url} after {attempts} attempts: {last}")
 
 
 def memory_account(w3):
@@ -121,7 +142,7 @@ def anchor(record, rpc_url=None, private_key=None, emit=None):
     private_key = private_key or os.getenv("PRIVATE_KEY", "")
     if not private_key:
         raise ValueError("PRIVATE_KEY not set")
-    w3 = connect(rpc_url)
+    w3 = connect(rpc_url, emit=say)
     acct = w3.eth.account.from_key(private_key)
     payload = MAGIC + digest(record)
 
