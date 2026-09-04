@@ -1,0 +1,17 @@
+# Core pipeline — verified working on Python 3.13
+opencv-python==5.0.0.93
+numpy==2.5.2
+requests==2.34.2
+
+# Blockchain anchoring + re-verification
+web3==8.0.0
+python-dotenv==1.2.3
+
+# In-process EVM, so `RPC_URL=memory` works with no node installed.
+# Only needed for the offline demo path; drop it if you point RPC_URL at
+# a real node (anvil / Sepolia).
+eth-tester==0.14.0b1
+
+# Face enhancement (GFPGAN) is intentionally NOT pinned here.
+# basicsr fails to build on Python 3.13 and enhancement must stay out of
+# the search / match path anyway. See README "known limitations".

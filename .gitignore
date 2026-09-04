@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+out/
+cropped_faces/
+
+# The YuNet detector (229KB) is committed so the repo runs out of the box.
+# Large model weights stay out:
+*.pth
+gfpgan/weights/
