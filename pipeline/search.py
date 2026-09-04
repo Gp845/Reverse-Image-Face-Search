@@ -112,7 +112,8 @@ def resolve_candidates(candidates, workers=16):
 
 SOCIAL_DOMAINS = (
     "instagram.com", "x.com", "twitter.com", "facebook.com", "linkedin.com",
-    "tiktok.com", "reddit.com", "youtube.com", "threads.net", "pinterest.com",
+    "tiktok.com", "reddit.com", "youtube.com", "threads.net", "threads.com",
+    "pinterest.com",
     "flickr.com", "tumblr.com", "vk.com", "weibo.com", "mastodon.social",
 )
 
