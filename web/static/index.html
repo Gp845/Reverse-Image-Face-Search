@@ -117,8 +117,13 @@
         <div><label>Match threshold</label>
           <input type="number" id="threshold" value="0.1" min="0" max="1" step="0.01"></div>
       </div>
-      <label>Candidates to check</label>
-      <input type="number" id="limit" value="25" min="1" max="80">
+      <div class="row">
+        <div><label>Candidates</label>
+          <input type="number" id="limit" value="25" min="1" max="80"></div>
+        <div><label>Faces to identify</label>
+          <input type="number" id="faces" value="1" min="1" max="5"></div>
+      </div>
+      <div class="hint" id="cost"></div>
 
       <div class="chk"><input type="checkbox" id="social"><label for="social"
         style="margin:0">social platforms only</label></div>
@@ -138,6 +143,9 @@ re-encoded, then a Sepolia transaction.</span></div>
     <div class="card result" id="result">
       <h2>Verified match</h2>
       <div class="kv" id="matchkv"></div>
+
+      <h2 id="faceshead" style="margin-top:6px;display:none">Faces identified</h2>
+      <div class="gallery" id="faces"></div>
 
       <h2 id="galleryhead" style="margin-top:6px;display:none">Top matches</h2>
       <div class="gallery" id="gallery"></div>
@@ -180,6 +188,19 @@ fetch(withTok('/api/config'), { headers: authHeaders }).then(r => {
 });
 
 $('file').onchange = () => { $('go').disabled = !$('file').files.length; };
+
+// Each face is searched separately, so the quota cost scales with it. Say so
+// where the number is chosen rather than after it has been spent.
+function showCost() {
+  const n = Math.max(1, Math.min(5, +$('faces').value || 1));
+  const all = $('backend').value === 'all';
+  $('cost').textContent = n === 1
+    ? `~${all ? 5 : 1} search${all ? 'es' : ''} for this run`
+    : `${n} faces searched separately — about ${n * (all ? 5 : 1)} searches`;
+}
+$('faces').oninput = showCost;
+$('backend').onchange = showCost;
+showCost();
 
 function line(text) {
   const el = document.createElement('span');
@@ -224,6 +245,7 @@ $('go').onclick = async () => {
   fd.append('conf', $('conf').value);
   fd.append('threshold', $('threshold').value);
   fd.append('limit', $('limit').value);
+  fd.append('faces', $('faces').value);
   fd.append('social_only', $('social').checked);
   fd.append('no_chain', $('nochain').checked);
 
@@ -270,6 +292,7 @@ function showResult(r) {
     rows.push(['block', `${anchor.block_number} · chain ${anchor.chain_id}`]);
   }
   $('matchkv').innerHTML = rows.map(([k, v]) => `<div>${k}</div><div>${v}</div>`).join('');
+  renderFaces(r.face_results || [], r.record);
   renderGallery(r.matches || []);
   pristine = JSON.stringify(r.record, null, 2);
   $('record').value = pristine;
@@ -282,6 +305,28 @@ function showResult(r) {
 // the source, so some hosts will refuse to serve them to another origin -- a
 // tile that fails to load hides its image rather than showing a broken icon,
 // keeping the score and domain, which are the parts that matter.
+// One tile per face the run processed, each showing its own crop and its own
+// best match, so a group photo reads as several independent identifications
+// rather than one number.
+function renderFaces(faceResults, record) {
+  const head = $('faceshead'), box = $('faces');
+  if (faceResults.length < 2) { head.style.display = 'none'; box.innerHTML = ''; return; }
+  head.style.display = 'block';
+  head.textContent = `Faces identified (${faceResults.filter(f => f.matches && f.matches.length).length} of ${faceResults.length})`;
+  box.innerHTML = faceResults.map(f => {
+    const m = (f.matches || [])[0];
+    const href = m ? (m.page_url || '#') : '#';
+    return `<a class="g ${m ? 'top' : ''}" href="${href}" target="_blank" rel="noopener">
+      <img src="${withTok('/api/crop/' + job + '/' + f.index)}" alt=""
+           onerror="this.style.display='none'">
+      <div class="meta">
+        <span class="sc">${m ? m.cosine.toFixed(4) : '—'}</span>
+        <span class="dm">${m ? m.domain : 'no match'}</span>
+        <span class="bk">face ${f.index} · ${f.box[2]}x${f.box[3]}px</span>
+      </div></a>`;
+  }).join('');
+}
+
 function renderGallery(matches) {
   const top = matches.slice(0, 10);
   const head = $('galleryhead'), box = $('gallery');

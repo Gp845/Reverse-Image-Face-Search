@@ -97,6 +97,35 @@ Either one alone is enough; the pipeline reports which are active and skips the 
 .venv/bin/python run_pipeline.py path/to/probe.jpg
 ```
 
+### Group photos
+
+```bash
+.venv/bin/python run_pipeline.py group.jpg --faces 5
+```
+
+`--faces N` identifies the N largest distinct faces, searching **each one
+separately** — with a single face the whole frame is searched, because that is
+what finds the original post, but in a group the frame identifies the
+photograph while a crop identifies a person. Every face therefore costs its own
+full set of searches: five faces is five times the quota of one.
+
+Faces are ordered by area, not detector confidence. Confidence is not a usable
+proxy for embedding quality — shrinking one face to 24px wide kept YuNet at
+0.911 confidence while its embedding drifted to 0.80 against the same face at
+full size — so anything under 48px is dropped instead.
+
+Repeat detections of the same person are collapsed by comparing embeddings
+(cosine ≥ 0.6), so a person appearing twice does not consume two search slots.
+On a two-panel test photo the two crops of one person scored 0.8045 and merged,
+while an unrelated detection scored 0.13 and stayed separate.
+
+Detection runs on a downscaled copy to bound memory but embeddings are cut from
+the original pixels, since downscaling before encoding pushed group faces under
+the size floor. Multi-face runs detect at 2000px rather than 1600px, because
+downscaling loses small faces outright rather than merely blurring them: on one
+1760x2347 photo the detector found one face at 1280px and two at 2000px, at a
+cost of 257 MB against 389 MB.
+
 Useful flags: `--backend serpapi|vision|all`, `--conf 0.9` (detection floor),
 `--threshold 0.363` (match strictness), `--social-only`, `--limit 25`, `--no-chain`.
 
@@ -231,8 +260,12 @@ after anchoring fails the check.
   and falls back to a short `visual_matches` list, while Yandex returns a deep
   one. `corroborated: true` therefore means something when it appears, but the
   face match, not agreement between engines, is what actually carries the claim.
-- Only the single highest-confidence face in the probe is encoded. Crowd photos
-  are not a supported input.
+- **A group photo is only as good as its smallest face.** Faces under 48px are
+  skipped, and detection itself loses small faces at lower resolution, so a
+  wide shot of a crowd will identify the front row and ignore the back.
+- Detection false positives reach the match-back. On one test photo a patch of
+  tree bark was detected as a face at 0.740 confidence, above the 0.5 default;
+  it is the face comparison, not the detector, that discards it.
 
 ## Ethics
 

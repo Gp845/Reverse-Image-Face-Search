@@ -147,6 +147,10 @@ def api_run():
         "conf": float(form.get("conf", DEFAULT_CONF)),
         "threshold": float(form.get("threshold", DEFAULT_THRESHOLD)),
         "limit": int(form.get("limit", 25)),
+        # Capped server-side: each face is a full set of engine queries against
+        # a metered quota, and a deployed instance should not let one upload
+        # spend it all.
+        "faces": max(1, min(int(form.get("faces", 1)), 5)),
         "social_only": form.get("social_only") == "true",
         "no_chain": form.get("no_chain") == "true",
         "rpc": form.get("rpc") or os.getenv("RPC_URL", "memory"),
@@ -199,10 +203,15 @@ def api_result(job_id):
 
 
 @app.get("/api/crop/<job_id>")
-def api_crop(job_id):
+@app.get("/api/crop/<job_id>/<int:face>")
+def api_crop(job_id, face=None):
     job = JOBS.get(job_id)
     if not job:
         return jsonify(error="unknown job"), 404
+    if face:
+        path = os.path.join(job["out"], f"probe_face{face}_preview.jpg")
+        if os.path.exists(path):
+            return send_file(path, mimetype="image/jpeg")
     # Prefer the padded preview; the 112x112 alignCrop is for the model, not eyes.
     path = os.path.join(job["out"], "probe_preview.jpg")
     if not os.path.exists(path):

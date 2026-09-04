@@ -48,7 +48,27 @@ DEFAULT_CONF = 0.5
 # ceiling matters because a 512MB container has roughly 250MB left after the
 # models load. Raise MAX_IMAGE_SIDE on a larger host if you need small or
 # distant faces, which is the one thing downscaling genuinely costs.
+# Smallest face worth encoding. Detection confidence is not a usable proxy for
+# embedding quality: shrinking one face until it was 24px wide kept YuNet's
+# confidence at 0.911 while its embedding drifted to 0.80 against the same face
+# at full size (0.91 at 48px, 0.94 at 64px). Below this, a "match" says more
+# about resolution than identity.
+MIN_FACE_PX = 48
+
+# Two detections of the same person in one image produce near-identical crops
+# and score far above this; two different people in a group photo score well
+# below it. Used only to collapse duplicates, never to claim a match.
+SAME_FACE_COSINE = 0.6
+
 MAX_SIDE = int(os.getenv("MAX_IMAGE_SIDE", "1600"))
+
+# Detection resolution when several faces are wanted. Faces in a group photo
+# are small, and downscaling loses them outright rather than merely blurring
+# them: on a 1760x2347 photo the detector found one face at 1280px and two at
+# 2000px. Memory is the reason this is not simply the default -- the same sweep
+# measured 257MB at 1280px against 389MB at 2000px, and a 512MB container has
+# to fit the match-back too. Lower MAX_GROUP_SIDE if a deployment is tight.
+GROUP_MAX_SIDE = int(os.getenv("MAX_GROUP_SIDE", "2000"))
 CANDIDATE_MAX_SIDE = int(os.getenv("MAX_CANDIDATE_SIDE", "1280"))
 
 
@@ -99,11 +119,60 @@ class FaceEncoder:
         row = faces[0]
         return self.embed(image, row), row
 
+    def encode_rows(self, image, rows, max_faces=None, min_size=MIN_FACE_PX,
+                    same_face=SAME_FACE_COSINE):
+        """Encode every distinct face in the image, largest first.
+
+        Ordered by face area rather than detector confidence, because
+        confidence stays high on faces far too small to encode reliably, while
+        area tracks embedding quality closely. Faces narrower than min_size are
+        dropped for the same reason.
+
+        Duplicates are collapsed by comparing embeddings: a person detected
+        twice -- in a reflection, a collage, or by two overlapping boxes NMS
+        did not merge -- would otherwise consume a search slot twice over.
+
+        Takes rows already detected, so detection can run on a cheap downscaled
+        copy while the embeddings are cut from full-resolution pixels.
+
+        Returns [(embedding, row), ...].
+        """
+        rows = sorted(rows, key=lambda r: float(r[2]) * float(r[3]), reverse=True)
+        kept = []
+        for row in rows:
+            if float(row[2]) < min_size or float(row[3]) < min_size:
+                continue
+            emb = self.embed(image, row)
+            if any(cosine(emb, prev) >= same_face for prev, _ in kept):
+                continue
+            kept.append((emb, row))
+            if max_faces and len(kept) >= max_faces:
+                break
+        return kept
+
+    def encode_all(self, image, **kw):
+        """Detect and encode every distinct face in one image."""
+        return self.encode_rows(image, self.detect(image), **kw)
+
     def encode_file(self, path):
         image = cv2.imread(path)
         if image is None:
             raise ValueError(f"could not read image: {path}")
         return self.encode_primary(image)
+
+
+def scale_row(row, factor):
+    """Rescale a YuNet row to a different resolution of the same image.
+
+    The first 14 values are the box and the five landmarks, all in pixels; the
+    last is the confidence score and must not be touched. Used to detect on a
+    downscaled copy -- which is what keeps memory bounded -- and then encode
+    from the original pixels, so a face that is 48px in the small copy is cut
+    from the 70px it actually occupies in the source.
+    """
+    out = row.copy()
+    out[0:14] = row[0:14] * factor
+    return out
 
 
 def preview_crop(image, face_row, pad=0.45, top_extra=0.18):

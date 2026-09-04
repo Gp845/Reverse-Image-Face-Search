@@ -32,6 +32,10 @@ def main():
                     help="cosine threshold for accepting a match "
                          "(SFace's published operating point is 0.363)")
     ap.add_argument("--limit", type=int, default=25, help="max candidates to download and check")
+    ap.add_argument("--faces", type=int, default=1,
+                    help="how many distinct faces to identify, largest first. "
+                         "Each face costs a full set of searches, so 5 faces is "
+                         "5x the quota of 1")
     ap.add_argument("--social-only", action="store_true",
                     help="only check candidates on known social platforms")
     ap.add_argument("--rpc", default=os.getenv("RPC_URL", "memory"),
@@ -44,7 +48,8 @@ def main():
         result = run(args.image, backend=args.backend, conf=args.conf,
                      threshold=args.threshold, limit=args.limit,
                      social_only=args.social_only, rpc=args.rpc,
-                     no_chain=args.no_chain, out=args.out, emit=print)
+                     no_chain=args.no_chain, out=args.out, faces=args.faces,
+                     emit=print)
     except PipelineError as exc:
         sys.exit(f"\n{exc}")
 
