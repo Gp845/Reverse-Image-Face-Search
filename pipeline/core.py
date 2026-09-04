@@ -238,6 +238,7 @@ def run(image_path, *, backend="all", conf=DEFAULT_CONF, threshold=DEFAULT_THRES
             emit(f"  face {fi['index']}  no match")
 
     # The strongest identification across all faces leads the record.
+    record_matches = 10
     identified.sort(key=lambda f: f["matches"][0]["cosine"], reverse=True)
     lead = identified[0]
 
@@ -248,11 +249,18 @@ def run(image_path, *, backend="all", conf=DEFAULT_CONF, threshold=DEFAULT_THRES
         "probe_sha256": hashlib.sha256(open(image_path, "rb").read()).hexdigest(),
         "faces_detected": len(detected),
         "faces_processed": len(face_infos),
+        # Every face is anchored, not just the strongest. `match` is the
+        # single best identification across the photo and stays for
+        # single-face callers; `faces` is the actual result for a group.
+        # Each face carries its ranked matches rather than only its best --
+        # the record's size is irrelevant on chain, where all that lands is a
+        # 38-byte hash of it however long it grows.
         "match": lead["matches"][0],
         "faces": [{"index": f["index"], "box": f["box"],
                    "confidence": f["confidence"],
                    "match": f["matches"][0] if f["matches"] else None,
-                   "match_count": len(f["matches"])}
+                   "match_count": len(f["matches"]),
+                   "matches": f["matches"][:record_matches]}
                   for f in face_infos],
         "method": {"detector": "YuNet", "encoder": "SFace",
                    "threshold": threshold, "min_face_px": MIN_FACE_PX,
@@ -276,6 +284,10 @@ def run(image_path, *, backend="all", conf=DEFAULT_CONF, threshold=DEFAULT_THRES
         return result
 
     rule("STAGE 4/4  blockchain anchor")
+    anchored_faces = sum(1 for f in record["faces"] if f["match"])
+    anchored_hits = sum(len(f["matches"]) for f in record["faces"])
+    emit(f"  anchoring : {len(record['faces'])} face(s), {anchored_faces} identified, "
+         f"{anchored_hits} ranked match(es) -- all of it inside one hash")
     emit(f"  rpc     : {rpc}")
     if rpc == "memory":
         w3 = chain.connect("memory")

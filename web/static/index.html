@@ -304,7 +304,7 @@ function showResult(r) {
     ['page', `<a href="${m.page_url}" target="_blank" rel="noopener">${m.page_url}</a>`],
     ['domain', m.domain],
     ['found by', m.found_by.join(', ')],
-    ['candidates', `${r.search.unique} unique · ${r.search.social} social · ${r.search.corroborated} corroborated`],
+    ['anchored', `${r.record.faces.length} face(s) · ${r.record.faces.filter(f => f.match).length} identified · ${r.record.faces.reduce((n, f) => n + (f.matches || []).length, 0)} ranked matches, all inside one hash`],
   ];
   if (anchor) {
     rows.push(['tx', `<a href="${anchor.explorer || '#'}" target="_blank" rel="noopener">${anchor.tx_hash}</a>`]);
