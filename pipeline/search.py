@@ -17,7 +17,7 @@ import os
 import re
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urlparse, urlunparse
 
 import requests
 
@@ -82,6 +82,20 @@ def resolve_page_url(url, session=None, timeout=20, max_bytes=262144):
             if found.startswith("http") and not _is_goto(found):
                 return found
     return url
+
+
+def _strip_tracking(url):
+    """Drop utm_* params. Yandex appends them, and they would otherwise make
+    the same page look like two different candidates across backends."""
+    try:
+        p = urlparse(url)
+    except Exception:
+        return url
+    if not p.query:
+        return url
+    kept = [kv for kv in p.query.split("&")
+            if kv and not kv.split("=")[0].lower().startswith("utm_")]
+    return urlunparse(p._replace(query="&".join(kept)))
 
 
 def resolve_candidates(candidates, workers=16):
@@ -195,6 +209,56 @@ class SerpApiLens(SearchBackend):
         # Every google_lens link is a redirector; unwrap them before the
         # candidates are deduped, domain-filtered, or written to the record.
         return resolve_candidates(out)
+
+
+class YandexImages(SearchBackend):
+    """Yandex reverse image search, via SerpApi's yandex_images engine.
+
+    This is the corroborating index. Yandex crawls independently of Google and
+    is markedly better at faces, so a page both engines return is genuinely two
+    crawls agreeing rather than one index consulted twice.
+
+    Two practical advantages over Google Lens: the `link` field is the real
+    page, with no interstitial to unwrap, and `original_image` gives a
+    full-resolution URL rather than a search-engine thumbnail, which makes the
+    match-back comparison work on better pixels.
+    """
+    name = "yandex"
+    ENDPOINT = "https://serpapi.com/search"
+    MAX_KEEP = 40
+
+    def __init__(self, api_key=None, max_keep=None):
+        self.api_key = api_key or os.getenv("SERPAPI_KEY", "")
+        self.max_keep = max_keep or self.MAX_KEEP
+
+    def available(self):
+        return bool(self.api_key)
+
+    def search(self, image_path, public_url=None):
+        if not public_url:
+            raise ValueError("Yandex needs a public image URL; upload the probe first")
+        params = {"engine": "yandex_images", "url": public_url,
+                  "api_key": self.api_key}
+        try:
+            r = requests.get(self.ENDPOINT, params=params, timeout=90)
+            r.raise_for_status()
+            data = r.json()
+        except Exception as e:
+            print(f"    [yandex] request failed: {e}")
+            return []
+        if "error" in data:
+            print(f"    [yandex] {data['error']}")
+            return []
+        out = []
+        for m in (data.get("image_results") or [])[:self.max_keep]:
+            page = _strip_tracking(m.get("link", ""))
+            img = ((m.get("original_image") or {}).get("link")
+                   or (m.get("thumbnail") or {}).get("link") or "")
+            if page or img:
+                out.append(Candidate(image_url=img, page_url=page,
+                                     title=m.get("title", ""),
+                                     backends={self.name}))
+        return out
 
 
 class GoogleVisionWeb(SearchBackend):
@@ -327,5 +391,8 @@ def merge(groups):
                                  not c.resolved))
 
 
+ALL_BACKENDS = (SerpApiLens, YandexImages, GoogleVisionWeb)
+
+
 def build_backends():
-    return [b for b in (SerpApiLens(), GoogleVisionWeb())]
+    return [cls() for cls in ALL_BACKENDS]

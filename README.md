@@ -9,7 +9,7 @@ probe image ──▶ YuNet detect ──▶ SFace encode (128-d)
                                       │
                                       ▼
                      ┌────────── reverse image search ──────────┐
-                     │  SerpApi (Google Lens)   Google Vision   │
+                     │  Google Lens      Yandex     (Vision)    │
                      └──────────────────┬───────────────────────┘
                                         ▼
                             merge + dedupe candidates
@@ -30,9 +30,17 @@ run through the same detector and encoder, and accepted only when its face
 actually matches the probe embedding above SFace's published operating point
 (cosine ≥ 0.363). The score that lands on-chain is a measured quantity.
 
-Two independent search engines run in parallel and the record states which
-engine(s) found each hit. A URL corroborated by both is materially harder to
-fake than a single opaque call.
+Two search engines run in parallel and the record states which engine(s) found
+each hit. What makes that worth something is that **Google and Yandex crawl
+independently** — a page both return is two separate indexes agreeing, not one
+index consulted twice, and it is materially harder to fake than a single opaque
+call. Yandex is also distinctly better at faces, and unlike Lens it returns the
+real page URL and a full-resolution image rather than a thumbnail.
+
+Both currently reach the web through SerpApi, so the *vendor* is shared even
+though the indexes are not. Google Vision web detection is implemented as a
+third, fully independent backend and switches itself on the moment
+`GOOGLE_VISION_API_KEY` is set.
 
 ## Setup
 
@@ -53,7 +61,8 @@ mkdir -p models && curl -L -o models/sface.onnx \
 
 | Backend | Env var | Free tier | Notes |
 |---|---|---|---|
-| SerpApi (Google Lens) | `SERPAPI_KEY` | 250 searches/mo | email signup, no card. Needs a public image URL, so the probe is uploaded to `0x0.st` first |
+| SerpApi — Google Lens | `SERPAPI_KEY` | 250 searches/mo | email signup, no card. Needs a public image URL, so the probe is uploaded first |
+| SerpApi — Yandex images | `SERPAPI_KEY` | same quota | no extra signup; shares the key above. Direct page URLs, full-res images |
 | Google Vision web detection | `GOOGLE_VISION_API_KEY` | 1,000 units/mo | **billing must be enabled on the project** even within the free tier, or every call returns `403 BILLING_DISABLED`; takes raw bytes, no upload step |
 
 Either one alone is enough; the pipeline reports which are active and skips the rest.
@@ -136,6 +145,13 @@ after anchoring fails the check.
   the "genuine match" claim. `enhance.py` is kept for inspecting low-res crops
   by eye; it is not importable on Python 3.13 because `basicsr` fails to build
   there, and it is not in `requirements.txt`.
+- **Cross-engine corroboration is a bonus, not something to count on.** Lens
+  and Yandex overlapped on zero pages in testing: 3 Lens hits and 40 Yandex
+  hits merged to 43 unique. The reason is structural — the probe is uploaded to
+  a throwaway host, so Lens `exact_matches` usually finds nothing for that URL
+  and falls back to a short `visual_matches` list, while Yandex returns a deep
+  one. `corroborated: true` therefore means something when it appears, but the
+  face match, not agreement between engines, is what actually carries the claim.
 - **Cosine 0.363** is OpenCV's published SFace threshold. It is a balanced
   operating point, not a zero-false-positive one; raise `--threshold` for a
   stricter claim.

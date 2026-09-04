@@ -21,7 +21,7 @@ from dotenv import load_dotenv
 from pipeline import chain
 from pipeline.encode import COSINE_THRESHOLD, FaceEncoder
 from pipeline.match import verify_candidates
-from pipeline.search import GoogleVisionWeb, SerpApiLens, merge, upload_for_public_url
+from pipeline.search import build_backends, merge, upload_for_public_url
 
 
 def rule(title):
@@ -32,7 +32,8 @@ def main():
     load_dotenv()
     ap = argparse.ArgumentParser(description="Face ID + blockchain verification pipeline")
     ap.add_argument("image", help="probe image containing the face to identify")
-    ap.add_argument("--backend", choices=["all", "serpapi", "vision"], default="all")
+    ap.add_argument("--backend", choices=["all", "serpapi", "yandex", "vision"],
+                    default="all")
     ap.add_argument("--conf", type=float, default=0.9, help="face detection confidence floor")
     ap.add_argument("--threshold", type=float, default=COSINE_THRESHOLD,
                     help="cosine threshold for accepting a match")
@@ -76,8 +77,9 @@ def main():
 
     # ---------------------------------------------------------------- stage 2
     rule("STAGE 2/4  reverse image search")
-    wanted = {"all": ["serpapi", "vision"], "serpapi": ["serpapi"], "vision": ["vision"]}[args.backend]
-    backends = [b for b in (SerpApiLens(), GoogleVisionWeb()) if b.name in wanted]
+    wanted = ({"serpapi", "yandex", "vision"} if args.backend == "all"
+              else {args.backend})
+    backends = [b for b in build_backends() if b.name in wanted]
     active = [b for b in backends if b.available()]
     for b in backends:
         print(f"  {b.name:9s} {'ready' if b.available() else 'SKIPPED (no api key set)'}")
@@ -85,15 +87,16 @@ def main():
         sys.exit("\nno search backend configured. Set SERPAPI_KEY and/or "
                  "GOOGLE_VISION_API_KEY in .env (see .env.example).")
 
+    needs_url = {"serpapi", "yandex"}
     public_url = None
-    if any(b.name == "serpapi" for b in active):
-        print("\n  uploading probe for a public URL (SerpApi requires one)...")
+    if any(b.name in needs_url for b in active):
+        print("\n  uploading probe for a public URL (Lens and Yandex both need one)...")
         public_url = upload_for_public_url(args.image)
-        print(f"  probe url: {public_url or 'FAILED - serpapi will be skipped'}")
+        print(f"  probe url: {public_url or 'FAILED - those backends will be skipped'}")
 
     raw = []
     for b in active:
-        if b.name == "serpapi" and not public_url:
+        if b.name in needs_url and not public_url:
             continue
         print(f"\n  querying {b.name}...")
         hits = b.search(args.image, public_url=public_url)
