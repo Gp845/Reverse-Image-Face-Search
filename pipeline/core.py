@@ -133,13 +133,20 @@ def run(image_path, *, backend="all", conf=DEFAULT_CONF, threshold=DEFAULT_THRES
     detected = [scale_row(r, factor) for r in enc.detect(small)]
     image = original
     found = enc.encode_rows(image, detected, max_faces=faces, min_size=min_face)
+    undersized = False
+    if not found and detected:
+        # The size floor is about embedding quality, not admissibility. A small
+        # photo can hold several distinct people who all fall short of it, and
+        # refusing the image entirely is worse than proceeding with a warning.
+        undersized = True
+        found = enc.encode_rows(image, detected, max_faces=faces, min_size=0)
     if not found:
         raise PipelineError(
-            f"no usable face at conf>={conf} and >={min_face}px. "
-            f"{len(detected)} raw detection(s); try a lower confidence floor.")
+            f"no face detected at conf>={conf}. Try a lower confidence floor.")
 
     # How many distinct faces the image actually holds, regardless of --faces.
-    available = len(enc.encode_rows(image, detected, min_size=min_face))
+    available = len(enc.encode_rows(image, detected,
+                                    min_size=0 if undersized else min_face))
 
     emit(f"  detector : YuNet   {len(detected)} detection(s), "
          f"{len(found)} distinct face(s) kept (largest first)")
@@ -147,6 +154,11 @@ def run(image_path, *, backend="all", conf=DEFAULT_CONF, threshold=DEFAULT_THRES
     if len(detected) > len(found):
         emit(f"  dropped  : {len(detected) - len(found)} below {min_face}px, "
              "duplicates, or beyond the requested face count")
+    if undersized:
+        widest = max(int(r[2]) for _e, r in found)
+        emit(f"\n  NOTE: every face is under {min_face}px (largest {widest}px). "
+             "Proceeding anyway,")
+        emit("        but small faces encode poorly, so treat these scores as weak.")
     if available > len(found):
         emit(f"\n  NOTE: this image has {available} distinct faces but only "
              f"{len(found)} was requested.")

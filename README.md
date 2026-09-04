@@ -112,7 +112,13 @@ full set of searches: five faces is five times the quota of one.
 Faces are ordered by area, not detector confidence. Confidence is not a usable
 proxy for embedding quality — shrinking one face to 24px wide kept YuNet at
 0.911 confidence while its embedding drifted to 0.80 against the same face at
-full size — so anything under 48px is dropped instead.
+full size (0.86 at 32px, 0.91 at 48px).
+
+`--min-face` (default 32px) is a **quality signal, not a gate**. If no face
+clears it the run proceeds on the largest faces available and says the scores
+are weak, because refusing an image outright is worse: a 282x353 photo in
+testing held five plainly distinct people at 35-43px each, and an absolute
+pixel floor rejected all five.
 
 Repeat detections of the same person are collapsed by comparing embeddings
 (cosine ≥ 0.6), so a person appearing twice does not consume two search slots.
@@ -126,7 +132,10 @@ downscaling loses small faces outright rather than merely blurring them: on one
 1760x2347 photo the detector found one face at 1280px and two at 2000px, at a
 cost of 257 MB against 389 MB.
 
-Useful flags: `--backend serpapi|vision|all`, `--conf 0.9` (detection floor),
+Useful flags: `--backend serpapi|greverse|yandex|bing|vision`, `--conf 0.75`
+(detection floor; 0.75 sits above the false positives seen in testing — a patch
+of tree bark scored 0.740 — while real faces cluster from 0.83 up even at 35px),
+`--min-face 32`, `--threshold 0.2`,
 `--threshold 0.363` (match strictness), `--social-only`, `--limit 25`, `--no-chain`.
 
 Then re-verify as a separate command — this is the tamper-evidence demonstration:
@@ -223,6 +232,27 @@ Re-verification fetches the transaction, extracts the stored digest, recomputes
 the digest from the local `record.json`, and compares. Any edit to the record
 after anchoring fails the check.
 
+## Defaults, and what they cost
+
+| flag | default | note |
+|---|---|---|
+| `--conf` | 0.75 | above the false positives seen in testing (tree bark at 0.740), below real faces (0.83+ even at 35px) |
+| `--threshold` | 0.2 | **below SFace's published 0.363** — see below |
+| `--min-face` | 32px | a warning, not a gate; the run proceeds on smaller faces and says the scores are weak |
+| `--faces` | 1 | each extra face costs its own full set of searches |
+
+The match threshold is the one to think about. On a five-face test photo the
+same run yields very different-looking results depending on it:
+
+```
+threshold   0.1    0.2    0.363 (published)
+matches      41     32      9
+```
+
+0.2 keeps roughly three quarters of what 0.1 accepted, and unrelated faces
+commonly score 0.20–0.29, so a "match" at this setting is a lead rather than an
+identification. Pass `--threshold 0.363` when the claim has to hold up.
+
 ## Known limitations
 
 - **The probe must already be indexed.** If the face is not on the public web,
@@ -260,12 +290,13 @@ after anchoring fails the check.
   and falls back to a short `visual_matches` list, while Yandex returns a deep
   one. `corroborated: true` therefore means something when it appears, but the
   face match, not agreement between engines, is what actually carries the claim.
-- **A group photo is only as good as its smallest face.** Faces under 48px are
-  skipped, and detection itself loses small faces at lower resolution, so a
-  wide shot of a crowd will identify the front row and ignore the back.
-- Detection false positives reach the match-back. On one test photo a patch of
-  tree bark was detected as a face at 0.740 confidence, above the 0.5 default;
-  it is the face comparison, not the detector, that discards it.
+- **A group photo is only as good as its smallest face.** Small faces encode
+  poorly — a face 32px wide scores 0.86 against itself at full resolution — and
+  detection loses them entirely at lower resolution, so a wide shot of a crowd
+  identifies the front row and ignores the back. The run warns when every face
+  is undersized rather than silently presenting weak scores as findings.
+- Detection false positives can still reach the match-back; it is the face
+  comparison, not the detector, that discards them.
 
 ## Ethics
 

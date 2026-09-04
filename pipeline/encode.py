@@ -21,15 +21,15 @@ DEFAULT_RECOGNIZER = os.path.join(HERE, "models", "sface.onnx")
 # of the model, not a knob -- it stays accurate whatever the pipeline defaults to.
 COSINE_THRESHOLD = 0.363
 
-# What the CLI and UI actually default to. Deliberately far below the published
-# operating point: it accepts nearly every detected face, so treat a match at
-# this setting as "worth a look" rather than "verified". Raise it toward 0.363
-# for a claim that means something.
-DEFAULT_THRESHOLD = 0.1
+# What the CLI and UI actually default to. Still below the published operating
+# point, so treat a match at this setting as "worth a look" rather than
+# "verified"; raise it toward 0.363 for a claim that means something.
+DEFAULT_THRESHOLD = 0.2
 
-# Detection confidence floor. 0.5 keeps marginal faces -- small, angled, or
-# partly occluded -- that 0.9 discards.
-DEFAULT_CONF = 0.5
+# Detection confidence floor. 0.75 sits above the false positives seen in
+# testing -- a patch of tree bark detected as a face at 0.740 -- while staying
+# below the real faces, which cluster from 0.83 upward even at 35px wide.
+DEFAULT_CONF = 0.75
 
 # Longest side an image may have before detection. This is a memory setting as
 # much as a speed one: YuNet's DNN buffers scale with input resolution, and on
@@ -51,9 +51,13 @@ DEFAULT_CONF = 0.5
 # Smallest face worth encoding. Detection confidence is not a usable proxy for
 # embedding quality: shrinking one face until it was 24px wide kept YuNet's
 # confidence at 0.911 while its embedding drifted to 0.80 against the same face
-# at full size (0.91 at 48px, 0.94 at 64px). Below this, a "match" says more
-# about resolution than identity.
-MIN_FACE_PX = 48
+# at full size (0.86 at 32px, 0.91 at 48px, 0.94 at 64px).
+#
+# This is a quality signal, not a gate. A small source image can hold five
+# perfectly distinct people at 35-43px each -- refusing to look at them because
+# they fall short of an absolute pixel count helps nobody, so callers fall back
+# to the largest faces available and are told the embeddings are degraded.
+MIN_FACE_PX = 32
 
 # Two detections of the same person in one image produce near-identical crops
 # and score far above this; two different people in a group photo score well
