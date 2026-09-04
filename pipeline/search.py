@@ -304,36 +304,47 @@ class GoogleVisionWeb(SearchBackend):
         return out
 
 
+# A dead host should cost seconds, not most of a minute -- this runs inside a
+# screen recording.
+UPLOAD_TIMEOUT = 25
+
+
 def _up_catbox(fh, name):
     r = requests.post("https://catbox.moe/user/api.php",
                       data={"reqtype": "fileupload"},
-                      files={"fileToUpload": (name, fh)}, timeout=90)
+                      files={"fileToUpload": (name, fh)}, timeout=UPLOAD_TIMEOUT)
     r.raise_for_status()
     return r.text.strip()
 
 
 def _up_uguu(fh, name):
     r = requests.post("https://uguu.se/upload", files={"files[]": (name, fh)},
-                      timeout=90)
+                      timeout=UPLOAD_TIMEOUT)
     r.raise_for_status()
     return r.json()["files"][0]["url"]
 
 
 def _up_x0(fh, name):
     r = requests.post("https://x0.at", files={"file": (name, fh)},
-                      headers={"User-Agent": "hhgoa-task3/1.0"}, timeout=90)
+                      headers={"User-Agent": "hhgoa-task3/1.0"},
+                      timeout=UPLOAD_TIMEOUT)
     r.raise_for_status()
     return r.text.strip()
 
 
-# Tried in order. 0x0.st was the original choice and is deliberately gone: it
-# disabled uploads entirely, and discovering that mid-run is exactly the failure
-# a single hardcoded host invites. Each of these returns a URL that serves the
-# image bytes directly, which is what Lens needs -- hosts that return an HTML
-# viewer page (tmpfiles.org) are useless here however reliable they are.
-UPLOAD_HOSTS = (("catbox.moe", _up_catbox),
-                ("uguu.se", _up_uguu),
-                ("x0.at", _up_x0))
+# Tried in order, most reliable first. x0.at leads because it is the only one
+# that has succeeded on every observed run; catbox and uguu each cost ~15-30s of
+# dead time before failing, which is why they are now the fallbacks rather than
+# the front of the queue.
+#
+# 0x0.st was the original single choice and is deliberately absent: it disabled
+# uploads entirely, and finding that out mid-run is exactly the failure a
+# hardcoded host invites. Each host here returns a URL serving image bytes
+# directly -- hosts that answer with an HTML viewer page (tmpfiles.org) are
+# useless here however reliable they are.
+UPLOAD_HOSTS = (("x0.at", _up_x0),
+                ("catbox.moe", _up_catbox),
+                ("uguu.se", _up_uguu))
 
 
 def upload_for_public_url(image_path, verify=True):
@@ -355,7 +366,7 @@ def upload_for_public_url(image_path, verify=True):
             if verify:
                 # A 200 with text/html means the host gave us a viewer page,
                 # not the bytes; Lens would silently see nothing.
-                head = requests.get(url, timeout=30, stream=True)
+                head = requests.get(url, timeout=15, stream=True)
                 head.raise_for_status()
                 ctype = head.headers.get("content-type", "")
                 head.close()

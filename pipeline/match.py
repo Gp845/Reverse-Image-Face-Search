@@ -9,6 +9,8 @@ embedding above SFace's published threshold. That is what makes the on-chain
 record mean something.
 """
 
+from concurrent.futures import ThreadPoolExecutor
+
 import cv2
 import numpy as np
 import requests
@@ -16,6 +18,7 @@ import requests
 from .encode import COSINE_THRESHOLD, cosine
 
 MAX_BYTES = 12 * 1024 * 1024
+FETCH_WORKERS = 8
 
 
 def fetch_image(url, timeout=30):
@@ -35,36 +38,49 @@ def fetch_image(url, timeout=30):
 
 
 def verify_candidates(encoder, probe_embedding, candidates, threshold=COSINE_THRESHOLD,
-                      limit=25, social_only=False, verbose=True):
-    """Return candidates whose face genuinely matches the probe, best score first."""
-    confirmed = []
-    checked = 0
+                      limit=25, social_only=False, verbose=True,
+                      workers=FETCH_WORKERS):
+    """Return candidates whose face genuinely matches the probe, best score first.
+
+    Downloads run concurrently because they are pure I/O and dominate the wall
+    clock, but the encoding stays on this thread: the OpenCV detector and
+    recognizer carry per-instance state (input size, last frame), so sharing one
+    across threads races. Scoring in candidate order also keeps the printed log
+    deterministic, which matters when the run is being screen-recorded.
+    """
+    queued = []
     for c in candidates:
-        if checked >= limit:
+        if len(queued) >= limit:
             break
         if social_only and not c.is_social:
             continue
         url = c.image_url or c.page_url
-        if not url or not url.lower().startswith("http"):
-            continue
-        checked += 1
-        img = fetch_image(url)
+        if url and url.lower().startswith("http"):
+            queued.append((c, url))
+
+    if not queued:
+        return []
+
+    with ThreadPoolExecutor(max_workers=min(workers, len(queued))) as pool:
+        images = list(pool.map(lambda q: fetch_image(q[1]), queued))
+
+    confirmed = []
+    for n, ((c, _url), img) in enumerate(zip(queued, images), start=1):
         if img is None:
             if verbose:
-                print(f"    [{checked:2d}] unreachable       {c.domain}")
+                print(f"    [{n:2d}] unreachable       {c.domain}")
             continue
         emb, _ = encoder.encode_primary(img)
         if emb is None:
             if verbose:
-                print(f"    [{checked:2d}] no face in image  {c.domain}")
+                print(f"    [{n:2d}] no face in image  {c.domain}")
             continue
         score = cosine(probe_embedding, emb)
         ok = score >= threshold
         if verbose:
-            print(f"    [{checked:2d}] cos={score:+.4f} {'MATCH  ' if ok else 'no match'} "
+            print(f"    [{n:2d}] cos={score:+.4f} {'MATCH  ' if ok else 'no match'} "
                   f"{c.domain} {'(corroborated)' if c.corroborated else ''}")
         if ok:
-            c_score = score
-            confirmed.append((c_score, c))
+            confirmed.append((score, c))
     confirmed.sort(key=lambda t: t[0], reverse=True)
     return confirmed
