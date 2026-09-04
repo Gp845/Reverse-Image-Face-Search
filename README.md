@@ -223,6 +223,15 @@ after anchoring fails the check.
   and falls back to a short `visual_matches` list, while Yandex returns a deep
   one. `corroborated: true` therefore means something when it appears, but the
   face match, not agreement between engines, is what actually carries the claim.
+- **The default threshold is 0.1, far below SFace's published 0.363.** At 0.1
+  almost every detected face is accepted: on the authors' own probe, 22 of 23
+  checked faces pass at 0.1 versus 3 at 0.363, including unrelated people
+  scoring 0.20-0.29. The top-ranked match is unchanged either way, since the
+  record keeps the highest score, but the count of "verified matches" stops
+  meaning much. Pass `--threshold 0.363` for a claim that carries weight.
+- **Detection confidence defaults to 0.5**, which keeps marginal faces — small,
+  angled, partly occluded — that 0.9 discards, at the cost of more spurious
+  detections in busy images.
 - **Cosine 0.363** is OpenCV's published SFace threshold. It is a balanced
   operating point, not a zero-false-positive one; raise `--threshold` for a
   stricter claim.

@@ -29,7 +29,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from pipeline import chain                                     # noqa: E402
 from pipeline.core import PipelineError, run                   # noqa: E402
-from pipeline.encode import COSINE_THRESHOLD                   # noqa: E402
+from pipeline.encode import DEFAULT_CONF, DEFAULT_THRESHOLD    # noqa: E402
 
 load_dotenv()
 
@@ -144,8 +144,8 @@ def api_run():
     form = request.form
     opts = {
         "backend": form.get("backend", "all"),
-        "conf": float(form.get("conf", 0.9)),
-        "threshold": float(form.get("threshold", COSINE_THRESHOLD)),
+        "conf": float(form.get("conf", DEFAULT_CONF)),
+        "threshold": float(form.get("threshold", DEFAULT_THRESHOLD)),
         "limit": int(form.get("limit", 25)),
         "social_only": form.get("social_only") == "true",
         "no_chain": form.get("no_chain") == "true",
@@ -239,7 +239,8 @@ def api_config():
         engines=[{"name": b.name, "available": b.available()}
                  for b in build_backends()],
         rpc=os.getenv("RPC_URL", "memory"),
-        threshold=COSINE_THRESHOLD,
+        threshold=DEFAULT_THRESHOLD,
+        conf=DEFAULT_CONF,
         gated=bool(ACCESS_TOKEN),
     )
 

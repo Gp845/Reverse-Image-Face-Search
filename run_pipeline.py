@@ -16,7 +16,7 @@ import sys
 from dotenv import load_dotenv
 
 from pipeline.core import PipelineError, run
-from pipeline.encode import COSINE_THRESHOLD
+from pipeline.encode import DEFAULT_CONF, DEFAULT_THRESHOLD
 
 
 def main():
@@ -26,9 +26,11 @@ def main():
     ap.add_argument("--backend",
                     choices=["all", "serpapi", "greverse", "yandex", "bing", "vision"],
                     default="all")
-    ap.add_argument("--conf", type=float, default=0.9, help="face detection confidence floor")
-    ap.add_argument("--threshold", type=float, default=COSINE_THRESHOLD,
-                    help="cosine threshold for accepting a match")
+    ap.add_argument("--conf", type=float, default=DEFAULT_CONF,
+                    help="face detection confidence floor")
+    ap.add_argument("--threshold", type=float, default=DEFAULT_THRESHOLD,
+                    help="cosine threshold for accepting a match "
+                         "(SFace's published operating point is 0.363)")
     ap.add_argument("--limit", type=int, default=25, help="max candidates to download and check")
     ap.add_argument("--social-only", action="store_true",
                     help="only check candidates on known social platforms")

@@ -17,13 +17,24 @@ HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEFAULT_DETECTOR = os.path.join(HERE, "face_detection_yunet_2026may.onnx")
 DEFAULT_RECOGNIZER = os.path.join(HERE, "models", "sface.onnx")
 
-# OpenCV's published operating point for SFace.
+# OpenCV's published operating point for SFace. This is a documented property
+# of the model, not a knob -- it stays accurate whatever the pipeline defaults to.
 COSINE_THRESHOLD = 0.363
+
+# What the CLI and UI actually default to. Deliberately far below the published
+# operating point: it accepts nearly every detected face, so treat a match at
+# this setting as "worth a look" rather than "verified". Raise it toward 0.363
+# for a claim that means something.
+DEFAULT_THRESHOLD = 0.1
+
+# Detection confidence floor. 0.5 keeps marginal faces -- small, angled, or
+# partly occluded -- that 0.9 discards.
+DEFAULT_CONF = 0.5
 
 
 class FaceEncoder:
     def __init__(self, detector=DEFAULT_DETECTOR, recognizer=DEFAULT_RECOGNIZER,
-                 conf=0.9, nms=0.3, top_k=5000):
+                 conf=DEFAULT_CONF, nms=0.3, top_k=5000):
         for p in (detector, recognizer):
             if not os.path.exists(p):
                 raise FileNotFoundError(f"model weights not found: {p}")

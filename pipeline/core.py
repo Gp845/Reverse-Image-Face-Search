@@ -20,7 +20,7 @@ from datetime import datetime, timezone
 import cv2
 
 from . import chain
-from .encode import COSINE_THRESHOLD, FaceEncoder, preview_crop
+from .encode import DEFAULT_CONF, DEFAULT_THRESHOLD, FaceEncoder, preview_crop
 from .match import verify_candidates
 from .search import build_backends, merge, upload_for_public_url
 
@@ -45,7 +45,7 @@ def _candidate_dict(score, c):
     }
 
 
-def run(image_path, *, backend="all", conf=0.9, threshold=COSINE_THRESHOLD,
+def run(image_path, *, backend="all", conf=DEFAULT_CONF, threshold=DEFAULT_THRESHOLD,
         limit=25, social_only=False, rpc=None, no_chain=False, out="out",
         emit=print):
     """Run the full pipeline. Returns a dict describing everything it did."""
