@@ -1,14 +1,3 @@
----
-title: Face ID Blockchain Verification
-emoji: 🔗
-colorFrom: blue
-colorTo: gray
-sdk: docker
-app_port: 7860
-pinned: false
-short_description: Face match on the open web, anchored on Ethereum Sepolia
----
-
 # HH Goa 2026 — Task 3: Face ID + Blockchain Verification
 
 A pipeline that detects and encodes a face, finds a **real** matching post on the
@@ -141,9 +130,18 @@ worker would not find its own job.
 
 It does **not** belong in a serverless function: a run takes ~75s against
 Vercel's 60s Hobby limit, and cv2 plus the models is ~130 MB against a 250 MB
-bundle. Peak RSS is ~233 MB, so any container host with 512 MB will do. If you
-want a Vercel front end, point it at this server running somewhere without a
-request timeout.
+bundle. If you want a Vercel front end, point it at this server running
+somewhere without a request timeout.
+
+`render.yaml` is a Render Blueprint for the free tier — connect the repo and it
+builds the Dockerfile, prompting for the three secrets rather than storing them.
+Peak RSS is ~233 MB against the free tier's 512 MB, and although 0.1 CPU sounds
+punishing, a run only spends about 5 seconds of actual CPU: the wall clock is
+network I/O, not computation. Free instances sleep after 15 minutes idle and
+take about a minute to wake.
+
+Hugging Face Spaces is **not** an option on a free account: since July 2026 the
+Docker and Gradio SDKs require PRO, and only Static Spaces remain free.
 
 ## Which blockchain
 

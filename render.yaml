@@ -1,0 +1,27 @@
+# Render Blueprint. Free tier: 512 MB RAM and 0.1 CPU, which fits -- peak RSS
+# is ~233 MB, and a full run only burns about 5 seconds of actual CPU because
+# the wall clock is dominated by network I/O, not computation.
+#
+# Secrets are deliberately NOT here. Set them in the Render dashboard so they
+# stay out of the repository.
+services:
+  - type: web
+    name: face-id-blockchain
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /
+    envVars:
+      - key: HOST
+        value: 0.0.0.0
+      - key: RPC_URL
+        value: https://ethereum-sepolia-rpc.publicnode.com
+      - key: MAX_CONCURRENT_JOBS
+        value: "1"
+      # sync:false means "prompt me for this, never store it in git".
+      - key: ACCESS_TOKEN
+        sync: false
+      - key: SERPAPI_KEY
+        sync: false
+      - key: PRIVATE_KEY
+        sync: false
