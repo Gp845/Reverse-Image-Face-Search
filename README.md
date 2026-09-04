@@ -22,6 +22,19 @@ probe image ──▶ YuNet detect ──▶ SFace encode (128-d)
                         verify_onchain.py (separate run)
 ```
 
+## Live demo
+
+**https://face-id-blockchain.onrender.com**
+
+Requires an access token as `?token=...` — the instance identifies faces on
+demand, spends from a funded key and draws on a metered search quota, so the
+token is shared with reviewers directly rather than published here. Run it
+locally instead and it needs no token at all.
+
+It is a free instance: it sleeps after 15 minutes idle and takes about a minute
+to wake, and a run takes roughly two minutes rather than the ~75s it takes
+locally, because 0.1 CPU stretches the compute out.
+
 ## Why the match-back step exists
 
 A search hit alone is just a URL you are *asserting* is the same person — which
