@@ -47,6 +47,15 @@ def main():
 
     os.makedirs(args.out, exist_ok=True)
 
+    # Fail fast on an unreachable or unfunded chain, before spending a search.
+    if not args.no_chain and args.rpc != "memory":
+        rule("PRE-FLIGHT  chain reachable and funded")
+        try:
+            for k, v in chain.preflight(rpc_url=args.rpc).items():
+                print(f"  {k:13s} {v}")
+        except Exception as exc:
+            sys.exit(f"  chain pre-flight failed: {exc}")
+
     # ---------------------------------------------------------------- stage 1
     rule("STAGE 1/4  face detection + encoding")
     enc = FaceEncoder(conf=args.conf)

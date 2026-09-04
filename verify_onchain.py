@@ -37,6 +37,8 @@ def main():
         print(f"  on-chain sha256 : {info['onchain_sha256']}")
         print(f"  local    sha256 : {info['local_sha256']}")
         print(f"  block           : {info['block_number']}  chain_id {info['chain_id']}")
+        if info.get("explorer"):
+            print(f"  explorer        : {info['explorer']}")
     print(f"\n{'VERIFIED' if ok else 'FAILED'} -- {msg}")
     raise SystemExit(0 if ok else 1)
 

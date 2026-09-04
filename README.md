@@ -79,13 +79,25 @@ The record is canonicalised to deterministic JSON, hashed with SHA-256, and the
 32-byte digest written into transaction calldata behind a 6-byte magic prefix.
 No Solidity compiler is required, so the repo runs with nothing but `pip`.
 
-`RPC_URL` accepts any JSON-RPC endpoint:
+**This submission anchors to Sepolia**, the Ethereum public testnet (chain id
+`11155111`). That choice is deliberate: the transaction is public, so the claim
+can be checked without trusting anything this repo prints. Every run emits a
+`https://sepolia.etherscan.io/tx/...` link.
 
-- **`memory`** — an in-process EVM (eth-tester). Zero setup, no faucet. It dies
-  with the process, so it cannot demonstrate cross-process re-verification.
-  Development only.
-- **Anvil / Ganache** (`http://127.0.0.1:8545`) — persistent local chain.
-- **Public testnet** (e.g. Sepolia) — a judge can open the tx in a block explorer.
+```
+RPC_URL=https://ethereum-sepolia-rpc.publicnode.com
+PRIVATE_KEY=<a throwaway testnet key, funded from any Sepolia faucet>
+```
+
+`RPC_URL` accepts any other JSON-RPC endpoint too:
+
+- **Anvil / Ganache** (`http://127.0.0.1:8545`) — persistent local chain, no faucet.
+- **`memory`** — an in-process EVM (eth-tester). Zero setup. It dies with the
+  process, so it cannot demonstrate cross-process re-verification. Development only.
+
+A run against a real chain starts with a pre-flight that confirms the node is
+reachable and the key is funded, so it fails in two seconds rather than after
+the search quota has already been spent.
 
 Re-verification fetches the transaction, extracts the stored digest, recomputes
 the digest from the local `record.json`, and compares. Any edit to the record
