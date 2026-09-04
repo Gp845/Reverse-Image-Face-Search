@@ -15,7 +15,7 @@ import cv2
 import numpy as np
 import requests
 
-from .encode import COSINE_THRESHOLD, cosine
+from .encode import COSINE_THRESHOLD, cosine, downscale
 
 MAX_BYTES = 12 * 1024 * 1024
 FETCH_WORKERS = 8
@@ -32,7 +32,11 @@ def fetch_image(url, timeout=30):
             if len(buf) > MAX_BYTES:
                 return None
         img = cv2.imdecode(np.frombuffer(buf, np.uint8), cv2.IMREAD_COLOR)
-        return img
+        # Bound the decoded size, not just the download. The byte cap permits a
+        # JPEG that expands to a resolution detection cannot process in
+        # reasonable time, and the encode loop is serial, so one such candidate
+        # halts every candidate behind it.
+        return downscale(img)
     except Exception:
         return None
 

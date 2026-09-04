@@ -20,7 +20,8 @@ from datetime import datetime, timezone
 import cv2
 
 from . import chain
-from .encode import DEFAULT_CONF, DEFAULT_THRESHOLD, FaceEncoder, preview_crop
+from .encode import (DEFAULT_CONF, DEFAULT_THRESHOLD, FaceEncoder,
+                     downscale, preview_crop)
 from .match import verify_candidates
 from .search import build_backends, merge, upload_for_public_url
 
@@ -74,6 +75,11 @@ def run(image_path, *, backend="all", conf=DEFAULT_CONF, threshold=DEFAULT_THRES
     image = cv2.imread(image_path)
     if image is None:
         raise PipelineError(f"could not read image: {image_path}")
+    full_h, full_w = image.shape[:2]
+    image = downscale(image)
+    if image.shape[:2] != (full_h, full_w):
+        emit(f"  resized  : {full_w}x{full_h} -> {image.shape[1]}x{image.shape[0]} "
+             "(detection cost grows far faster than pixel count)")
     embedding, row = enc.encode_primary(image)
     if embedding is None:
         raise PipelineError(

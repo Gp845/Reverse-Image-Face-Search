@@ -31,6 +31,27 @@ DEFAULT_THRESHOLD = 0.1
 # partly occluded -- that 0.9 discards.
 DEFAULT_CONF = 0.5
 
+# Longest side an image may have before detection. YuNet's cost grows far
+# faster than the pixel count -- measured 0.05s at 1080px, 0.44s at 3000px,
+# 6.9s at 6000px and 154s at 9000px -- so a single oversized image stalls the
+# whole run. A 12MB JPEG, which the download cap happily allows, can decode to
+# over 100 megapixels. Nothing here needs that resolution: faces end up as
+# 112x112 crops either way.
+MAX_SIDE = 3000
+
+
+def downscale(image, max_side=MAX_SIDE):
+    """Shrink an image so its longest side is at most max_side. No-op if smaller."""
+    if image is None:
+        return None
+    h, w = image.shape[:2]
+    longest = max(h, w)
+    if longest <= max_side:
+        return image
+    scale = max_side / float(longest)
+    return cv2.resize(image, (max(1, int(w * scale)), max(1, int(h * scale))),
+                      interpolation=cv2.INTER_AREA)
+
 
 class FaceEncoder:
     def __init__(self, detector=DEFAULT_DETECTOR, recognizer=DEFAULT_RECOGNIZER,
