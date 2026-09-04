@@ -210,9 +210,6 @@ after anchoring fails the check.
   sites that answer the proxied fetch with 403/406 or omit both tags. An
   unresolved candidate can still match on the face, so the record carries
   `url_resolved: false` rather than presenting a redirector as the post.
-- **Google Vision web detection requires billing enabled** on the GCP project,
-  even inside the 1,000 free units/month. Without it the API returns
-  `403 PERMISSION_DENIED / BILLING_DISABLED` and the backend self-disables.
 - **Face enhancement is deliberately excluded from the judged path.** GFPGAN
   reconstructs plausible detail rather than recovering true detail, so putting
   it upstream of either the search or the embedding comparison would undermine
